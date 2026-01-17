@@ -1,1 +1,1 @@
-# Project Title: Project Chronos: The Self-Healing Smart City Mesh
+# Project Chronos: The Self-Healing Smart City Mesh

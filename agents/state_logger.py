@@ -8,11 +8,16 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 from typing import Dict, Any
 
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from agents.shared.messaging import get_broker, subscribe
 from agents.shared.config import get_mongodb_config
+from agents.shared.sentry import init_sentry, capture_startup, capture_received_event, capture_exception
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +34,20 @@ EVENT_TOPICS = [
     "chronos.events.audit.decision",
     "chronos.events.system.action",
     "chronos.events.approval.required",
+    "chronos.events.agent.compare",
+    "chronos.events.agent.compare.result",
+    # Airspace domain events
+    "chronos.events.airspace.plan.uploaded",
+    "chronos.events.airspace.flight.parsed",
+    "chronos.events.airspace.trajectory.sampled",
+    "chronos.events.airspace.conflict.detected",
+    "chronos.events.airspace.hotspot.detected",
+    "chronos.events.airspace.solution.proposed",
+    "chronos.events.airspace.report.ready",
+    "chronos.events.airspace.mitigation.applied",
+    # Geospatial domain events
+    "chronos.events.geo.incident",
+    "chronos.events.geo.risk_area",
 ]
 
 # MongoDB configuration

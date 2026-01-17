@@ -1,0 +1,126 @@
+{
+  "plan_name": "3D Map Test Flight Plan - Multiple Conflicts and Hotspots",
+  "flights": [
+    {
+      "ACID": "UAL101",
+      "Plane type": "Boeing 737-800",
+      "route": ["KJFK", "KORD", "KSEA"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KSEA",
+      "departure time": "2024-01-20T10:00:00Z",
+      "aircraft speed": 450,
+      "passengers": 180,
+      "is_cargo": false
+    },
+    {
+      "ACID": "AAL202",
+      "Plane type": "Airbus A320",
+      "route": ["KJFK", "KORD"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T10:15:00Z",
+      "aircraft speed": 450,
+      "passengers": 150,
+      "is_cargo": false
+    },
+    {
+      "ACID": "SWA303",
+      "Plane type": "Boeing 737-700",
+      "route": ["KJFK", "KDFW"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KDFW",
+      "departure time": "2024-01-20T10:30:00Z",
+      "aircraft speed": 430,
+      "passengers": 130,
+      "is_cargo": false
+    },
+    {
+      "ACID": "DAL404",
+      "Plane type": "Airbus A350",
+      "route": ["KJFK", "KLAX"],
+      "altitude": 38000,
+      "departure airport": "KJFK",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T10:05:00Z",
+      "aircraft speed": 490,
+      "passengers": 280,
+      "is_cargo": false
+    },
+    {
+      "ACID": "UAL505",
+      "Plane type": "Boeing 787-9",
+      "route": ["KORD", "KLAX"],
+      "altitude": 35000,
+      "departure airport": "KORD",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T11:00:00Z",
+      "aircraft speed": 480,
+      "passengers": 250,
+      "is_cargo": false
+    },
+    {
+      "ACID": "AAL606",
+      "Plane type": "Airbus A321",
+      "route": ["KORD", "KDFW", "KLAX"],
+      "altitude": 36000,
+      "departure airport": "KORD",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T11:15:00Z",
+      "aircraft speed": 460,
+      "passengers": 200,
+      "is_cargo": false
+    },
+    {
+      "ACID": "SWA707",
+      "Plane type": "Boeing 737-800",
+      "route": ["KDFW", "KSEA"],
+      "altitude": 34000,
+      "departure airport": "KDFW",
+      "arrival airport": "KSEA",
+      "departure time": "2024-01-20T12:00:00Z",
+      "aircraft speed": 440,
+      "passengers": 175,
+      "is_cargo": false
+    },
+    {
+      "ACID": "DAL808",
+      "Plane type": "Boeing 777-300ER",
+      "route": ["KLAX", "KJFK"],
+      "altitude": 39000,
+      "departure airport": "KLAX",
+      "arrival airport": "KJFK",
+      "departure time": "2024-01-20T13:00:00Z",
+      "aircraft speed": 500,
+      "passengers": 350,
+      "is_cargo": false
+    },
+    {
+      "ACID": "UAL909",
+      "Plane type": "Boeing 737-900",
+      "route": ["KSEA", "KORD"],
+      "altitude": 35000,
+      "departure airport": "KSEA",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T14:00:00Z",
+      "aircraft speed": 450,
+      "passengers": 190,
+      "is_cargo": false
+    },
+    {
+      "ACID": "AAL1010",
+      "Plane type": "Airbus A319",
+      "route": ["KDFW", "KORD"],
+      "altitude": 35000,
+      "departure airport": "KDFW",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T15:00:00Z",
+      "aircraft speed": 420,
+      "passengers": 140,
+      "is_cargo": false
+    }
+  ]
+}
+

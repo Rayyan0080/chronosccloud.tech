@@ -10,9 +10,14 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from typing import Dict, Any
 
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from agents.shared.messaging import get_broker, subscribe
+from agents.shared.sentry import init_sentry, capture_startup, capture_received_event, capture_exception
 
 # Configure logging
 logging.basicConfig(

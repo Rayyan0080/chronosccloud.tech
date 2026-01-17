@@ -1,0 +1,126 @@
+{
+  "plan_name": "Test Flight Plan - Multi-Aircraft Scenario",
+  "flights": [
+    {
+      "ACID": "UAL101",
+      "Plane type": "Boeing 737-800",
+      "route": ["KJFK", "WAYPOINT_A", "WAYPOINT_B", "KLAX"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T10:00:00Z",
+      "aircraft speed": 450,
+      "passengers": 180,
+      "is_cargo": false
+    },
+    {
+      "ACID": "AAL202",
+      "Plane type": "Airbus A320",
+      "route": ["KJFK", "WAYPOINT_A", "WAYPOINT_C", "KORD"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T10:15:00Z",
+      "aircraft speed": 450,
+      "passengers": 150,
+      "is_cargo": false
+    },
+    {
+      "ACID": "DAL303",
+      "Plane type": "Boeing 777-300ER",
+      "route": ["KLAX", "WAYPOINT_D", "WAYPOINT_E", "KDFW"],
+      "altitude": 38000,
+      "departure airport": "KLAX",
+      "arrival airport": "KDFW",
+      "departure time": "2024-01-20T11:00:00Z",
+      "aircraft speed": 480,
+      "passengers": 350,
+      "is_cargo": false
+    },
+    {
+      "ACID": "SWA404",
+      "Plane type": "Boeing 737-700",
+      "route": ["KORD", "WAYPOINT_F", "KATL"],
+      "altitude": 33000,
+      "departure airport": "KORD",
+      "arrival airport": "KATL",
+      "departure time": "2024-01-20T11:30:00Z",
+      "aircraft speed": 420,
+      "passengers": 130,
+      "is_cargo": false
+    },
+    {
+      "ACID": "FED505",
+      "Plane type": "Boeing 767-300F",
+      "route": ["KMIA", "WAYPOINT_G", "WAYPOINT_H", "KSEA"],
+      "altitude": 38000,
+      "departure airport": "KMIA",
+      "arrival airport": "KSEA",
+      "departure time": "2024-01-20T12:00:00Z",
+      "aircraft speed": 490,
+      "passengers": 0,
+      "is_cargo": true
+    },
+    {
+      "ACID": "JBU606",
+      "Plane type": "Airbus A321",
+      "route": ["KJFK", "WAYPOINT_A", "WAYPOINT_I", "KMIA"],
+      "altitude": 36000,
+      "departure airport": "KJFK",
+      "arrival airport": "KMIA",
+      "departure time": "2024-01-20T10:30:00Z",
+      "aircraft speed": 440,
+      "passengers": 200,
+      "is_cargo": false
+    },
+    {
+      "ACID": "ASA707",
+      "Plane type": "Boeing 737-900ER",
+      "route": ["KSEA", "WAYPOINT_J", "KLAX"],
+      "altitude": 34000,
+      "departure airport": "KSEA",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T13:00:00Z",
+      "aircraft speed": 430,
+      "passengers": 175,
+      "is_cargo": false
+    },
+    {
+      "ACID": "VIOL808",
+      "Plane type": "Boeing 737-800",
+      "route": ["KDFW", "WAYPOINT_K", "KORD"],
+      "altitude": 8500,
+      "departure airport": "KDFW",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T14:00:00Z",
+      "aircraft speed": 250,
+      "passengers": 160,
+      "is_cargo": false
+    },
+    {
+      "ACID": "SPEED909",
+      "Plane type": "Airbus A320",
+      "route": ["KATL", "WAYPOINT_L", "KMIA"],
+      "altitude": 37000,
+      "departure airport": "KATL",
+      "arrival airport": "KMIA",
+      "departure time": "2024-01-20T14:30:00Z",
+      "aircraft speed": 650,
+      "passengers": 140,
+      "is_cargo": false
+    },
+    {
+      "ACID": "HIGH1010",
+      "Plane type": "Boeing 787-9",
+      "route": ["KJFK", "WAYPOINT_M", "KSEA"],
+      "altitude": 52000,
+      "departure airport": "KJFK",
+      "arrival airport": "KSEA",
+      "departure time": "2024-01-20T15:00:00Z",
+      "aircraft speed": 500,
+      "passengers": 280,
+      "is_cargo": false
+    }
+  ]
+}
+

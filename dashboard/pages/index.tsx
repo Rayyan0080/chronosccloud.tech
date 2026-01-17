@@ -1,6 +1,10 @@
-import { useState, useEffect } from 'react';
-import EventCard from '../components/EventCard';
+import { useState, useEffect, useRef } from 'react';
 import AutonomyBadge from '../components/AutonomyBadge';
+import SectorHealthCard from '../components/SectorHealthCard';
+import AirspaceGauge from '../components/AirspaceGauge';
+import RecoveryPlanPanel from '../components/RecoveryPlanPanel';
+import TimelineEvent from '../components/TimelineEvent';
+import { announceNewEvents, setVoiceEnabled as setGlobalVoiceEnabled, isVoiceEnabled } from '../lib/voiceAnnouncements';
 
 type Event = {
   _id: string;
@@ -9,26 +13,144 @@ type Event = {
   timestamp: string;
 };
 
+type SectorStatus = {
+  sectorId: string;
+  voltage: number;
+  load: number;
+  status: 'healthy' | 'warning' | 'critical';
+};
+
 export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [autonomyLevel, setAutonomyLevel] = useState<string>('NORMAL');
+  const [sectors, setSectors] = useState<SectorStatus[]>([]);
+  const [airspaceCongestion, setAirspaceCongestion] = useState<number>(0);
+  const [latestPlan, setLatestPlan] = useState<any>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
+  const previousEventsRef = useRef<Event[]>([]);
+
+  // Load voices when component mounts
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      // Load voices (some browsers need this)
+      const loadVoices = () => {
+        speechSynthesis.getVoices();
+      };
+      loadVoices();
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = loadVoices;
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const fetchEvents = async () => {
       try {
         const res = await fetch('/api/events?limit=50');
         const data = await res.json();
-        setEvents(data.events || []);
+        const newEvents = data.events || [];
+        
+        // CRITICAL: Don't overwrite global state if user just toggled it off
+        // Only sync if React state matches what we expect
+        // Check current global state first
+        const currentGlobalState = isVoiceEnabled();
+        
+        // Only sync if states are different AND React state is true
+        // If React state is false, respect it (user clicked off)
+        // If React state is true but global is false, don't overwrite (user just turned off)
+        if (voiceEnabled && currentGlobalState) {
+          // Both are true, safe to sync
+          setGlobalVoiceEnabled(voiceEnabled);
+        } else if (!voiceEnabled) {
+          // React state is false (user wants it off), respect that
+          setGlobalVoiceEnabled(false);
+        }
+        // If React is true but global is false, don't change global (user just turned off)
+        
+        // Only announce if voice is enabled AND we have previous events to compare
+        if (voiceEnabled && currentGlobalState && previousEventsRef.current.length > 0) {
+          announceNewEvents(previousEventsRef.current, newEvents, voiceEnabled);
+        } else if (!voiceEnabled || !currentGlobalState) {
+          // If voice is disabled, make sure nothing is queued
+          console.log('[VOICE] Voice disabled (React:', voiceEnabled, 'Global:', currentGlobalState, '), skipping announcement check');
+        }
+        
+        // Update previous events reference
+        previousEventsRef.current = [...newEvents];
+        setEvents(newEvents);
 
         // Find latest autonomy level
         const operatorStatusEvents = data.events.filter(
           (e: Event) => e.topic === 'chronos.events.operator.status'
         );
         if (operatorStatusEvents.length > 0) {
-          const latest = operatorStatusEvents[0];
+          const sorted = operatorStatusEvents.sort((a, b) => 
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          const latest = sorted[0];
           const level = latest.payload?.details?.autonomy_level || 'NORMAL';
           setAutonomyLevel(level);
+        }
+
+        // Extract sector statuses from power.failure events
+        const sectorMap = new Map<string, { voltage: number; load: number; timestamp: string }>();
+        data.events
+          .filter((e: Event) => e.topic === 'chronos.events.power.failure')
+          .forEach((e: Event) => {
+            const sectorId = e.payload?.sector_id;
+            const voltage = e.payload?.details?.voltage || 0;
+            const load = e.payload?.details?.load || 0;
+            const timestamp = e.timestamp;
+
+            if (sectorId) {
+              const existing = sectorMap.get(sectorId);
+              if (!existing || new Date(timestamp) > new Date(existing.timestamp)) {
+                sectorMap.set(sectorId, { voltage, load, timestamp });
+              }
+            }
+          });
+
+        // Convert to sector status array
+        const sectorStatuses: SectorStatus[] = ['sector-1', 'sector-2', 'sector-3'].map(sectorId => {
+          const data = sectorMap.get(sectorId) || { voltage: 120, load: 50, timestamp: '' };
+          let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+          
+          if (data.voltage < 10 || data.load > 90) {
+            status = 'critical';
+          } else if (data.voltage < 90 || data.load > 70) {
+            status = 'warning';
+          }
+
+          return {
+            sectorId,
+            voltage: data.voltage,
+            load: data.load,
+            status,
+          };
+        });
+        setSectors(sectorStatuses);
+
+        // Calculate airspace congestion (mock for now - can be enhanced with real data)
+        const congestionEvents = data.events.filter(
+          (e: Event) => e.topic.includes('airspace') || e.topic.includes('congestion')
+        );
+        // Mock congestion based on recent events
+        const recentEvents = data.events.filter(
+          (e: Event) => new Date(e.timestamp).getTime() > Date.now() - 5 * 60 * 1000
+        );
+        const congestion = Math.min(100, (recentEvents.length / 10) * 100);
+        setAirspaceCongestion(congestion);
+
+        // Find latest recovery plan
+        const recoveryPlans = data.events.filter(
+          (e: Event) => e.topic === 'chronos.events.recovery.plan'
+        );
+        if (recoveryPlans.length > 0) {
+          const sorted = recoveryPlans.sort((a, b) => 
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          setLatestPlan(sorted[0].payload?.details || null);
         }
       } catch (error) {
         console.error('Error fetching events:', error);
@@ -46,30 +168,117 @@ export default function Home() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-dark-muted">Loading events...</div>
+        <div className="text-gray-400">Loading dashboard...</div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-white">Live Event Feed</h1>
-        <AutonomyBadge level={autonomyLevel} />
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-4xl font-bold text-white">Chronos Control Center</h1>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const newState = !voiceEnabled;
+              console.log('[VOICE] ============================================');
+              console.log('[VOICE] Button clicked! Toggling voice:', newState ? 'ON' : 'OFF');
+              console.log('[VOICE] ============================================');
+              
+              // CRITICAL: Update global state FIRST (before React state)
+              // This ensures the module-level check happens immediately
+              setGlobalVoiceEnabled(newState);
+              
+              // Then update React state (for UI feedback)
+              setVoiceEnabled(newState);
+              
+              // Force cancel speech synthesis immediately (extra safety)
+              if (!newState && 'speechSynthesis' in window) {
+                console.log('[VOICE] Force canceling speech synthesis from button');
+                // Very aggressive cancellation - try to interrupt with silent utterance
+                const interrupt = () => {
+                  try {
+                    speechSynthesis.pause();
+                    speechSynthesis.cancel();
+                    // Try to interrupt with a silent utterance
+                    const silent = new SpeechSynthesisUtterance('');
+                    silent.volume = 0;
+                    speechSynthesis.speak(silent);
+                    speechSynthesis.cancel();
+                  } catch (e) {
+                    // Ignore errors, just try to cancel
+                    speechSynthesis.cancel();
+                  }
+                };
+                
+                // Immediate
+                interrupt();
+                
+                // Try multiple times with different methods
+                const cancelAttempts = [10, 50, 100, 200, 500, 1000];
+                cancelAttempts.forEach(delay => {
+                  setTimeout(() => {
+                    interrupt();
+                    console.log(`[VOICE] Cancel attempt at ${delay}ms`);
+                  }, delay);
+                });
+              }
+            }}
+            className={`px-4 py-2 rounded-lg border transition-colors ${
+              voiceEnabled
+                ? 'bg-green-600 border-green-500 text-white'
+                : 'bg-gray-700 border-gray-600 text-gray-300'
+            }`}
+            title={voiceEnabled ? 'Voice announcements enabled' : 'Voice announcements disabled'}
+          >
+            {voiceEnabled ? '🔊 Voice On' : '🔇 Voice Off'}
+          </button>
+          <AutonomyBadge level={autonomyLevel} />
+        </div>
       </div>
 
-      <div className="space-y-4">
-        {events.length === 0 ? (
-          <div className="text-center py-12 text-dark-muted">
-            No events found. Start the crisis generator to see events.
+      {/* Status Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {sectors.map((sector) => (
+          <SectorHealthCard
+            key={sector.sectorId}
+            sectorId={sector.sectorId}
+            voltage={sector.voltage}
+            load={sector.load}
+            status={sector.status}
+          />
+        ))}
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column - Airspace & Recovery Plan */}
+        <div className="lg:col-span-1 space-y-6">
+          <AirspaceGauge congestion={airspaceCongestion} />
+          <RecoveryPlanPanel plan={latestPlan} />
+        </div>
+
+        {/* Right Column - Timeline Feed */}
+        <div className="lg:col-span-2">
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
+            <h2 className="text-xl font-bold text-white mb-6">Event Timeline</h2>
+            <div className="space-y-0">
+              {events.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  No events found. Start the crisis generator to see events.
+                </div>
+              ) : (
+                events.slice(0, 20).map((event) => (
+                  <TimelineEvent key={event._id} event={event} />
+                ))
+              )}
+            </div>
           </div>
-        ) : (
-          events.map((event) => (
-            <EventCard key={event._id} event={event} />
-          ))
-        )}
+        </div>
       </div>
     </div>
   );
 }
-

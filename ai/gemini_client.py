@@ -8,9 +8,13 @@ import json
 import logging
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from uuid import uuid4
+
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
 

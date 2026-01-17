@@ -12,6 +12,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -142,22 +143,7 @@ class NATSBackend(MessageBroker):
 
 class SolaceBackend(MessageBroker):
     """
-    Solace PubSub+ message broker backend (stub implementation).
-
-    TODO: Implement full Solace PubSub+ integration:
-    1. Install Solace Python API: pip install solace-pubsubplus
-    2. Configure connection using environment variables:
-       - SOLACE_HOST
-       - SOLACE_PORT
-       - SOLACE_USERNAME
-       - SOLACE_PASSWORD
-       - SOLACE_VPN
-    3. Implement connect() using MessagingService
-    4. Implement publish() using DirectMessagePublisher
-    5. Implement subscribe() using MessageReceiver
-    6. Handle topic name conversion (dots to slashes: chronos.events -> chronos/events)
-    7. Add error handling and reconnection logic
-    8. Add message persistence and guaranteed delivery configuration
+    Solace PubSub+ message broker backend with automatic reconnection.
     """
 
     def __init__(
@@ -169,175 +155,276 @@ class SolaceBackend(MessageBroker):
         vpn: Optional[str] = None,
     ):
         """
-        Initialize Solace backend (stub).
+        Initialize Solace backend.
 
         Args:
             host: Solace host (default: from env SOLACE_HOST)
             port: Solace port (default: from env SOLACE_PORT or 55555)
             username: Solace username (default: from env SOLACE_USERNAME)
             password: Solace password (default: from env SOLACE_PASSWORD)
-            vpn: Solace VPN name (default: from env SOLACE_VPN or "default")
+            vpn: Solace VPN name (default: from env SOLACE_VPN)
         """
-        self.host = host or os.getenv("SOLACE_HOST", "localhost")
-        self.port = port or int(os.getenv("SOLACE_PORT", "55555"))
-        self.username = username or os.getenv("SOLACE_USERNAME", "default")
-        self.password = password or os.getenv("SOLACE_PASSWORD", "default")
-        self.vpn = vpn or os.getenv("SOLACE_VPN", "default")
+        from .config import get_solace_config
+
+        try:
+            config = get_solace_config()
+            self.host = host or config["host"]
+            self.port = port or config["port"]
+            self.username = username or config["username"]
+            self.password = password or config["password"]
+            self.vpn = vpn or config["vpn"]
+        except ValueError:
+            # Fallback if config not available
+            self.host = host or os.getenv("SOLACE_HOST", "localhost")
+            self.port = port or int(os.getenv("SOLACE_PORT", "55555"))
+            self.username = username or os.getenv("SOLACE_USERNAME", "default")
+            self.password = password or os.getenv("SOLACE_PASSWORD", "default")
+            self.vpn = vpn or os.getenv("SOLACE_VPN", "default")
+
         self.messaging_service = None
         self.publisher = None
         self._subscriptions = {}  # Track active subscriptions
         self._connected = False
+        self._reconnect_task = None
+        self._connection_lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        """
-        Connect to Solace PubSub+ (stub implementation).
+        """Connect to Solace PubSub+ with automatic reconnection."""
+        async with self._connection_lock:
+            try:
+                # Try to import Solace libraries
+                try:
+                    from solace.messaging.messaging_service import MessagingService
+                except ImportError:
+                    raise ImportError(
+                        "solace-pubsubplus library not installed. "
+                        "Install with: pip install solace-pubsubplus"
+                    )
 
-        TODO: Implement actual Solace connection:
-        ```python
-        from solace.messaging.messaging_service import MessagingService
-        from solace.messaging.config.transport_security_configuration import TransportSecurityConfiguration
+                # Build connection properties
+                # Solace SDK uses property-based configuration
+                connection_properties = {
+                    "solace.messaging.transport.host": f"tcp://{self.host}:{self.port}",
+                    "solace.messaging.service.vpn-name": self.vpn,
+                    "solace.messaging.authentication.scheme.basic.username": self.username,
+                    "solace.messaging.authentication.scheme.basic.password": self.password,
+                }
 
-        messaging_service = MessagingService.builder() \
-            .from_properties({
-                "solace.messaging.transport.host": f"tcp://{self.host}:{self.port}",
-                "solace.messaging.service.vpn-name": self.vpn,
-                "solace.messaging.authentication.scheme.basic.username": self.username,
-                "solace.messaging.authentication.scheme.basic.password": self.password,
-            }) \
-            .build()
+                # Create messaging service
+                messaging_service = MessagingService.builder().from_properties(
+                    connection_properties
+                ).build()
 
-        await messaging_service.connect()
-        self.messaging_service = messaging_service
-        self._connected = True
-        ```
-        """
-        logger.warning("Solace backend is a stub. Connection not implemented.")
-        logger.info(
-            f"Solace connection parameters: {self.host}:{self.port}, VPN: {self.vpn}, User: {self.username}"
-        )
-        # Placeholder: simulate connection
-        self._connected = True
-        logger.warning("TODO: Implement actual Solace PubSub+ connection")
+                # Connect (Solace SDK uses synchronous connect)
+                # Run in executor to avoid blocking
+                loop = asyncio.get_event_loop()
+                try:
+                    await loop.run_in_executor(None, messaging_service.connect)
+                except Exception as e:
+                    logger.error(f"Solace connection failed: {e}")
+                    raise
+
+                self.messaging_service = messaging_service
+                self._connected = True
+
+                logger.info("=" * 60)
+                logger.info("Connected to Solace Cloud")
+                logger.info(f"Host: {self.host}:{self.port}")
+                logger.info(f"VPN: {self.vpn}")
+                logger.info(f"Username: {self.username}")
+                logger.info("=" * 60)
+
+                # Start reconnection monitoring
+                self._start_reconnect_monitor()
+
+            except ImportError as e:
+                logger.error(f"Solace library not available: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to connect to Solace: {e}")
+                logger.warning("Falling back to NATS backend")
+                raise
+
+    def _start_reconnect_monitor(self) -> None:
+        """Start background task to monitor connection and reconnect if needed."""
+        async def monitor_connection():
+            while True:
+                try:
+                    await asyncio.sleep(10)  # Check every 10 seconds
+                    if not self._connected or not await self.is_connected():
+                        logger.warning("Solace connection lost, attempting reconnect...")
+                        await self._reconnect()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Error in reconnect monitor: {e}")
+
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+        self._reconnect_task = asyncio.create_task(monitor_connection())
+
+    async def _reconnect(self, max_retries: int = 5, retry_delay: int = 5) -> None:
+        """Attempt to reconnect to Solace with exponential backoff."""
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Reconnection attempt {attempt + 1}/{max_retries}")
+                await self.connect()
+                logger.info("Successfully reconnected to Solace")
+                return
+            except Exception as e:
+                logger.warning(f"Reconnection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                else:
+                    logger.error("Max reconnection attempts reached")
+                    raise
 
     async def disconnect(self) -> None:
-        """
-        Disconnect from Solace PubSub+ (stub implementation).
+        """Disconnect from Solace PubSub+."""
+        async with self._connection_lock:
+            try:
+                if self._reconnect_task:
+                    self._reconnect_task.cancel()
+                    try:
+                        await self._reconnect_task
+                    except asyncio.CancelledError:
+                        pass
 
-        TODO: Implement actual Solace disconnection:
-        ```python
-        if self.publisher:
-            await self.publisher.terminate()
-        if self.messaging_service:
-            await self.messaging_service.disconnect()
-        self._connected = False
-        ```
-        """
-        logger.warning("Solace backend is a stub. Disconnection not implemented.")
-        self._connected = False
-        self._subscriptions.clear()
-        logger.warning("TODO: Implement actual Solace PubSub+ disconnection")
+                if self.publisher:
+                    try:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, self.publisher.terminate)
+                    except Exception as e:
+                        logger.warning(f"Error terminating publisher: {e}")
+
+                if self.messaging_service:
+                    try:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None, self.messaging_service.disconnect
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error disconnecting messaging service: {e}")
+
+                self._connected = False
+                self._subscriptions.clear()
+                logger.info("Disconnected from Solace")
+
+            except Exception as e:
+                logger.error(f"Error during disconnect: {e}")
 
     async def publish(self, topic: str, payload: dict) -> None:
-        """
-        Publish message to Solace topic (stub implementation).
+        """Publish message to Solace topic."""
+        if not self._connected or not await self.is_connected():
+            raise RuntimeError("Not connected to Solace. Call connect() first.")
 
-        TODO: Implement actual Solace publishing:
-        1. Convert topic format: "chronos.events.power.failure" -> "chronos/events/power/failure"
-        2. Create DirectMessagePublisher if not exists
-        3. Create OutboundMessage with JSON payload
-        4. Publish to topic using Topic.of()
-        5. Handle errors and retries
+        try:
+            from solace.messaging.resources.topic import Topic
+            from solace.messaging.publisher.direct_message_publisher import (
+                PublishFailureListener,
+            )
 
-        Example:
-        ```python
-        from solace.messaging.resources.topic import Topic
-        from solace.messaging.publisher.direct_message_publisher import PublishFailureListener
+            # Convert topic format: dots to slashes for Solace
+            solace_topic = topic.replace(".", "/")
 
-        # Convert topic format
-        solace_topic = topic.replace(".", "/")
-        
-        # Create publisher if needed
-        if not self.publisher:
-            self.publisher = self.messaging_service.create_direct_message_publisher_builder() \
-                .build()
-            await self.publisher.start()
+            # Create publisher if needed
+            if not self.publisher:
+                loop = asyncio.get_event_loop()
+                self.publisher = (
+                    self.messaging_service.create_direct_message_publisher_builder()
+                    .build()
+                )
+                await loop.run_in_executor(None, self.publisher.start)
 
-        # Create and publish message
-        message = self.messaging_service.message_builder() \
-            .with_application_message_id(str(uuid.uuid4())) \
-            .with_property("application", "chronos") \
-            .build(json.dumps(payload))
-        
-        await self.publisher.publish(message, Topic.of(solace_topic))
-        ```
-        """
-        # Convert topic format: dots to slashes for Solace
-        solace_topic = topic.replace(".", "/")
-        logger.warning(
-            f"Solace backend is a stub. Would publish to {solace_topic}: {payload}"
-        )
-        logger.warning("TODO: Implement actual Solace PubSub+ publishing")
+            # Create message
+            message = (
+                self.messaging_service.message_builder()
+                .with_application_message_id(str(uuid4()))
+                .with_property("application", "chronos")
+                .with_property("original_topic", topic)
+                .build(json.dumps(payload))
+            )
+
+            # Publish (blocking call, run in executor)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, self.publisher.publish, message, Topic.of(solace_topic)
+            )
+
+            logger.debug(f"Published to Solace topic {solace_topic}: {payload}")
+
+        except Exception as e:
+            logger.error(f"Failed to publish to Solace: {e}")
+            # Attempt reconnection if connection lost
+            if not await self.is_connected():
+                await self._reconnect()
+            raise
 
     async def subscribe(self, topic: str, handler: Callable) -> None:
-        """
-        Subscribe to Solace topic (stub implementation).
+        """Subscribe to Solace topic."""
+        if not self._connected or not await self.is_connected():
+            raise RuntimeError("Not connected to Solace. Call connect() first.")
 
-        TODO: Implement actual Solace subscription:
-        1. Convert topic format: "chronos.events.power.failure" -> "chronos/events/power/failure"
-        2. Create MessageReceiver with topic subscription
-        3. Set up async message handler
-        4. Handle topic subscriptions and message callbacks
-        5. Support wildcard subscriptions if needed
+        try:
+            from solace.messaging.resources.topic import Topic
+            from solace.messaging.receiver.message_receiver import MessageReceiver
 
-        Example:
-        ```python
-        from solace.messaging.resources.topic import Topic
-        from solace.messaging.receiver.message_receiver import MessageReceiver
+            # Convert topic format: dots to slashes for Solace
+            solace_topic = topic.replace(".", "/")
 
-        # Convert topic format
-        solace_topic = topic.replace(".", "/")
-        
-        # Create receiver
-        receiver = self.messaging_service.create_message_receiver_builder() \
-            .with_subscriptions(Topic.of(solace_topic)) \
-            .build()
-        
-        # Start receiver
-        await receiver.start()
-        
-        # Set up message handler
-        async def message_handler(message):
-            payload = json.loads(message.get_payload_as_string())
-            await handler(topic, payload)
-        
-        receiver.receive_async(message_handler)
-        self._subscriptions[topic] = receiver
-        ```
-        """
-        # Convert topic format: dots to slashes for Solace
-        solace_topic = topic.replace(".", "/")
-        logger.warning(
-            f"Solace backend is a stub. Would subscribe to {solace_topic}"
-        )
-        logger.warning("TODO: Implement actual Solace PubSub+ subscription")
-        # Placeholder: store subscription
-        self._subscriptions[topic] = {"topic": solace_topic, "handler": handler}
+            # Create receiver
+            receiver = (
+                self.messaging_service.create_message_receiver_builder()
+                .with_subscriptions(Topic.of(solace_topic))
+                .build()
+            )
+
+            # Start receiver (blocking call, run in executor)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, receiver.start)
+
+            # Set up message handler
+            def message_handler(message):
+                try:
+                    payload_str = message.get_payload_as_string()
+                    payload = json.loads(payload_str)
+                    # Run handler in async context
+                    asyncio.create_task(handler(topic, payload))
+                except Exception as e:
+                    logger.error(f"Error handling Solace message: {e}")
+
+            # Register async message handler
+            receiver.receive_async(message_handler)
+
+            self._subscriptions[topic] = receiver
+            logger.info(f"Subscribed to Solace topic: {solace_topic}")
+
+        except Exception as e:
+            logger.error(f"Failed to subscribe to Solace: {e}")
+            raise
 
     async def is_connected(self) -> bool:
-        """Check if Solace connection is active (stub)."""
-        return self._connected
+        """Check if Solace connection is active."""
+        if not self.messaging_service:
+            return False
+        try:
+            # Check connection status (Solace SDK method)
+            return self.messaging_service.is_connected()
+        except Exception:
+            return False
 
 
-# Factory function to create broker instance
+# Factory function to create broker instance with fallback
 def create_broker(backend: Optional[str] = None) -> MessageBroker:
     """
     Create a message broker instance based on configuration.
+    Automatically falls back to NATS if Solace is unavailable.
 
     Args:
-        backend: Backend type ("nats" or "solace"). If None, reads from env BROKER_BACKEND.
+        backend: Backend type ("nats" or "solace"). If None, auto-detects from env.
 
     Returns:
-        MessageBroker instance
+        MessageBroker instance (Solace if available, otherwise NATS)
 
     Raises:
         ValueError: If backend type is unknown
@@ -346,10 +433,21 @@ def create_broker(backend: Optional[str] = None) -> MessageBroker:
 
     backend = backend or get_broker_backend()
 
-    if backend == "nats":
+    if backend == "solace":
+        try:
+            # Try to create Solace backend
+            solace_backend = SolaceBackend()
+            # Test if Solace config is available
+            from .config import get_solace_config
+            get_solace_config()  # Will raise ValueError if config incomplete
+            return solace_backend
+        except (ImportError, ValueError) as e:
+            logger.warning(
+                f"Solace backend unavailable ({e}), falling back to NATS"
+            )
+            return NATSBackend()
+    elif backend == "nats":
         return NATSBackend()
-    elif backend == "solace":
-        return SolaceBackend()
     else:
         raise ValueError(
             f"Unknown broker backend: {backend}. Supported: 'nats', 'solace'"
@@ -362,7 +460,7 @@ _broker_instance: Optional[MessageBroker] = None
 
 async def get_broker() -> MessageBroker:
     """
-    Get or create the global broker instance.
+    Get or create the global broker instance with automatic fallback.
 
     Returns:
         MessageBroker instance (singleton)
@@ -370,7 +468,17 @@ async def get_broker() -> MessageBroker:
     global _broker_instance
     if _broker_instance is None:
         _broker_instance = create_broker()
-        await _broker_instance.connect()
+        try:
+            await _broker_instance.connect()
+        except Exception as e:
+            logger.error(f"Failed to connect to broker: {e}")
+            # If Solace fails, try NATS fallback
+            if isinstance(_broker_instance, SolaceBackend):
+                logger.info("Falling back to NATS backend")
+                _broker_instance = NATSBackend()
+                await _broker_instance.connect()
+            else:
+                raise
     return _broker_instance
 
 

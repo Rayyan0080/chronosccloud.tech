@@ -13,8 +13,12 @@ import sys
 from datetime import datetime
 from uuid import uuid4
 
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from agents.shared.messaging import get_broker, publish
 from agents.shared.schema import OperatorStatus, Severity
+from agents.shared.sentry import init_sentry, capture_startup, capture_published_event, capture_exception
 
 # Configure logging
 logging.basicConfig(
@@ -283,6 +287,10 @@ async def main() -> None:
     """Main entry point for the stress monitor service."""
     # Determine mode from environment or command line
     mode = os.getenv("STRESS_MONITOR_MODE", "demo").lower()
+    
+    # Initialize Sentry
+    init_sentry("stress_monitor", "NORMAL")
+    capture_startup("stress_monitor", {"service_type": "monitor", "mode": mode})
 
     if len(sys.argv) > 1:
         mode = sys.argv[1].lower()

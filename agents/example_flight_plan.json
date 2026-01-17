@@ -1,0 +1,41 @@
+{
+  "flights": [
+    {
+      "ACID": "UAL123",
+      "Plane type": "Boeing 737-800",
+      "route": ["KJFK", "WAYPOINT1", "WAYPOINT2", "KLAX"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-15T08:00:00Z",
+      "aircraft speed": 450,
+      "passengers": 180,
+      "is_cargo": false
+    },
+    {
+      "ACID": "AAL456",
+      "Plane type": "Airbus A320",
+      "route": ["KORD", "WAYPOINT1", "KDFW"],
+      "altitude": 33000,
+      "departure airport": "KORD",
+      "arrival airport": "KDFW",
+      "departure time": "2024-01-15T09:00:00Z",
+      "aircraft speed": 420,
+      "passengers": 150,
+      "is_cargo": false
+    },
+    {
+      "ACID": "FED789",
+      "Plane type": "Boeing 767-300F",
+      "route": ["KMIA", "WAYPOINT1", "WAYPOINT2", "WAYPOINT3", "KSEA"],
+      "altitude": 38000,
+      "departure airport": "KMIA",
+      "arrival airport": "KSEA",
+      "departure time": "2024-01-15T10:00:00Z",
+      "aircraft speed": 480,
+      "passengers": 0,
+      "is_cargo": true
+    }
+  ]
+}
+

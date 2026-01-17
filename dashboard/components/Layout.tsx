@@ -7,6 +7,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: '/', label: 'Event Feed' },
     { href: '/map', label: 'Map' },
+    { href: '/airspace', label: 'Airspace' },
+    { href: '/compare', label: 'Agentic Compare' },
     { href: '/audit', label: 'Audit' },
   ];
 
@@ -38,7 +40,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </nav>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className={`${router.pathname === '/map' ? 'px-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} py-8`}>
         {children}
       </main>
     </div>

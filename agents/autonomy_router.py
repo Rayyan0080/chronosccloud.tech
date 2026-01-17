@@ -10,11 +10,27 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from agents.shared.messaging import get_broker, publish, subscribe
 from agents.shared.schema import DecisionType, DecisionOutcome, Severity
+from agents.shared.sentry import init_sentry, capture_startup, capture_received_event, capture_published_event, capture_exception
+
+# Optional voice output
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from voice.elevenlabs_client import speak_autonomy_takeover
+    VOICE_ENABLED = True
+except ImportError:
+    VOICE_ENABLED = False
+    speak_autonomy_takeover = None
 
 # Configure logging
 logging.basicConfig(
@@ -182,6 +198,14 @@ class AutonomyRouter:
             logger.info(f"Plan: {plan_name}")
             await publish(SYSTEM_ACTION_TOPIC, system_action_event)
             logger.info(f"Published to: {SYSTEM_ACTION_TOPIC}")
+            
+            # Voice announcement (optional)
+            if VOICE_ENABLED and speak_autonomy_takeover:
+                try:
+                    speak_autonomy_takeover(plan_name, sector_id)
+                except Exception as e:
+                    logger.warning(f"Voice announcement failed: {e}")
+            
             logger.info("=" * 60)
 
         except Exception as e:
@@ -282,6 +306,7 @@ class AutonomyRouter:
             logger.info("Interrupted by user")
         except Exception as e:
             logger.error(f"Fatal error: {e}", exc_info=True)
+            capture_exception(e, {"service": "autonomy_router", "error_type": "fatal"})
             raise
 
         logger.info("Autonomy Router Service stopped")

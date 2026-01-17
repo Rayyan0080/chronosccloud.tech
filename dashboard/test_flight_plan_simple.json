@@ -1,0 +1,42 @@
+{
+  "plan_name": "Simple Test Flight Plan",
+  "flights": [
+    {
+      "ACID": "TEST001",
+      "Plane type": "Boeing 737-800",
+      "route": ["KJFK", "KLAX"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KLAX",
+      "departure time": "2024-01-20T10:00:00Z",
+      "aircraft speed": 450,
+      "passengers": 180,
+      "is_cargo": false
+    },
+    {
+      "ACID": "TEST002",
+      "Plane type": "Airbus A320",
+      "route": ["KJFK", "KORD"],
+      "altitude": 35000,
+      "departure airport": "KJFK",
+      "arrival airport": "KORD",
+      "departure time": "2024-01-20T10:15:00Z",
+      "aircraft speed": 450,
+      "passengers": 150,
+      "is_cargo": false
+    },
+    {
+      "ACID": "TEST003",
+      "Plane type": "Boeing 777",
+      "route": ["KLAX", "KDFW"],
+      "altitude": 38000,
+      "departure airport": "KLAX",
+      "arrival airport": "KDFW",
+      "departure time": "2024-01-20T11:00:00Z",
+      "aircraft speed": 480,
+      "passengers": 350,
+      "is_cargo": false
+    }
+  ]
+}
+

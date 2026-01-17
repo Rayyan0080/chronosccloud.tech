@@ -8,13 +8,30 @@ Publishes events every 5 seconds for random sectors, with manual trigger support
 import asyncio
 import json
 import logging
+import os
 import random
 import sys
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from agents.shared.messaging import get_broker, publish
 from agents.shared.schema import PowerFailureEvent, Severity
+from agents.shared.sentry import init_sentry, capture_startup, capture_published_event, capture_exception
+
+# Optional voice output
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from voice.elevenlabs_client import speak_power_failure
+    VOICE_ENABLED = True
+except ImportError:
+    VOICE_ENABLED = False
+    speak_power_failure = None
+from agents.shared.sentry import init_sentry, capture_startup, capture_published_event, capture_exception
 
 # Configure logging
 logging.basicConfig(
@@ -129,9 +146,33 @@ async def publish_power_failure(sector_id: str, is_manual: bool = False) -> None
         # Publish to message broker
         await publish(POWER_FAILURE_TOPIC, event)
         logger.info(f"Published to topic: {POWER_FAILURE_TOPIC}")
+        
+        # Voice announcement (optional)
+        if VOICE_ENABLED and speak_power_failure:
+            try:
+                sector_id = event.get("sector_id", "unknown")
+                severity = event.get("severity", "info")
+                voltage = event.get("details", {}).get("voltage", 0)
+                load = event.get("details", {}).get("load", 0)
+                speak_power_failure(sector_id, severity, voltage, load)
+            except Exception as e:
+                logger.warning(f"Voice announcement failed: {e}")
+        
+        # Capture to Sentry
+        capture_published_event(
+            POWER_FAILURE_TOPIC,
+            event.get("event_id", "unknown"),
+            {
+                "sector_id": event.get("sector_id"),
+                "severity": event.get("severity"),
+                "voltage": event.get("details", {}).get("voltage"),
+                "load": event.get("details", {}).get("load"),
+            }
+        )
 
     except Exception as e:
         logger.error(f"Failed to publish power failure event: {e}", exc_info=True)
+        capture_exception(e, {"service": "crisis_generator", "event_type": "publish_failure"})
 
 
 async def keyboard_input_handler() -> None:
@@ -205,6 +246,10 @@ async def periodic_event_generator(interval: int = 5) -> None:
 
 async def main() -> None:
     """Main entry point for the crisis generator service."""
+    # Initialize Sentry
+    init_sentry("crisis_generator")
+    capture_startup("crisis_generator", {"service_type": "event_generator"})
+    
     logger.info("Starting Crisis Generator Service")
     logger.info("=" * 60)
     logger.info("Configuration:")
@@ -246,6 +291,7 @@ async def main() -> None:
         logger.info("Interrupted by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
+        capture_exception(e, {"service": "crisis_generator", "error_type": "fatal"})
         sys.exit(1)
 
     logger.info("Crisis Generator Service stopped")

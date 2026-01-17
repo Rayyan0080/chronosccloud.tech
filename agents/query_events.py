@@ -9,8 +9,12 @@ import argparse
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+# Add project root to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.shared.config import get_mongodb_config
 

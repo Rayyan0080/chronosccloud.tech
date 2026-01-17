@@ -11,21 +11,31 @@ from typing import Optional
 def get_broker_backend() -> str:
     """
     Get the message broker backend type from environment variable.
+    Auto-detects Solace if SOLACE_HOST is set, otherwise defaults to NATS.
 
     Returns:
-        Backend type: "nats" (default) or "solace"
+        Backend type: "solace" if SOLACE_HOST is set, otherwise "nats"
 
     Environment Variables:
-        BROKER_BACKEND: Backend type ("nats" or "solace")
+        BROKER_BACKEND: Backend type ("nats" or "solace") - optional, auto-detected if not set
+        SOLACE_HOST: If set, will use Solace backend
     """
-    backend = os.getenv("BROKER_BACKEND", "nats").lower().strip()
-
-    if backend not in ["nats", "solace"]:
-        raise ValueError(
-            f"Invalid BROKER_BACKEND: {backend}. Must be 'nats' or 'solace'"
-        )
-
-    return backend
+    # Check if explicitly set
+    backend = os.getenv("BROKER_BACKEND", "").lower().strip()
+    
+    if backend:
+        if backend not in ["nats", "solace"]:
+            raise ValueError(
+                f"Invalid BROKER_BACKEND: {backend}. Must be 'nats' or 'solace'"
+            )
+        return backend
+    
+    # Auto-detect: if SOLACE_HOST is set, use Solace
+    if os.getenv("SOLACE_HOST"):
+        return "solace"
+    
+    # Default to NATS
+    return "nats"
 
 
 def get_nats_config() -> dict:
@@ -47,12 +57,23 @@ def get_solace_config() -> dict:
 
     Returns:
         Dictionary with Solace connection parameters
+
+    Environment Variables:
+        SOLACE_HOST: Solace host (required for Solace backend)
+        SOLACE_VPN: Solace VPN name (required)
+        SOLACE_USERNAME: Solace username (required)
+        SOLACE_PASSWORD: Solace password (required)
+        SOLACE_PORT: Solace port (default: 55555)
     """
+    host = os.getenv("SOLACE_HOST")
+    if not host:
+        raise ValueError("SOLACE_HOST environment variable is required for Solace backend")
+    
     return {
-        "host": os.getenv("SOLACE_HOST", "localhost"),
+        "host": host,
         "port": int(os.getenv("SOLACE_PORT", "55555")),
-        "username": os.getenv("SOLACE_USERNAME", "default"),
-        "password": os.getenv("SOLACE_PASSWORD", "default"),
+        "username": os.getenv("SOLACE_USERNAME") or os.getenv("SOLACE_USER"),
+        "password": os.getenv("SOLACE_PASSWORD") or os.getenv("SOLACE_PASS"),
         "vpn": os.getenv("SOLACE_VPN", "default"),
     }
 

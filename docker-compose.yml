@@ -1,0 +1,196 @@
+version: '3.8'
+
+services:
+  # Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: chronos-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronos-network
+
+  # Cache
+  redis:
+    image: redis:7-alpine
+    container_name: chronos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronos-network
+
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: chronos-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: chronos
+      POSTGRES_PASSWORD: chronos
+      POSTGRES_DB: chronos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chronos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronos-network
+
+  # API Gateway (placeholder - add your implementation)
+  api-gateway:
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.api-gateway
+    container_name: chronos-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # Dashboard (placeholder - add your implementation)
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: chronos-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8080
+      REACT_APP_WS_URL: ws://localhost:8080/ws
+    depends_on:
+      - api-gateway
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # AI Service (placeholder - add your implementation)
+  ai-service:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: chronos-ai
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # Voice Service (placeholder - add your implementation)
+  voice-service:
+    build:
+      context: ./voice
+      dockerfile: Dockerfile
+    container_name: chronos-voice
+    ports:
+      - "8001:8001"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # Agent Service (placeholder - add your implementation)
+  agent-service:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    container_name: chronos-agents
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: chronos
+      POSTGRES_PASS: chronos
+      POSTGRES_DB: chronos
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # QNX Service (placeholder - add your implementation)
+  qnx-service:
+    build:
+      context: ./qnx
+      dockerfile: Dockerfile
+    container_name: chronos-qnx
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+  postgres_data:
+
+networks:
+  chronos-network:
+    driver: bridge
+

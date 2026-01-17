@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # Message Broker Placeholder (NATS)
+  # This is a lightweight placeholder for local development.
+  # For production, swap with Solace PubSub+ (see README.md)
+  nats:
+    image: nats:2.10-alpine
+    container_name: chronos-nats
+    ports:
+      - "4222:4222"      # Client connections
+      - "8222:8222"      # HTTP monitoring
+      - "6222:6222"      # Cluster routing
+    command: ["-js", "-m", "8222"]  # Enable JetStream and monitoring
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: chronos-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-chronos}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:-chronos}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-chronos}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chronos-network
+    restart: unless-stopped
+
+  # MongoDB Express (Optional - for database management UI)
+  mongo-express:
+    image: mongo-express:1.0.0
+    container_name: chronos-mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-chronos}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASS:-chronos}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-chronos}:${MONGO_PASS:-chronos}@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASS:-admin}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - chronos-network
+    restart: unless-stopped
+    profiles:
+      - tools  # Only start with --profile tools
+
+volumes:
+  nats_data:
+  mongodb_data:
+  mongodb_config:
+
+networks:
+  chronos-network:
+    driver: bridge
+

@@ -145,20 +145,31 @@ class OpenSkyAirspaceAdapter(LiveAdapter):
                 "lomax": OTTAWA_BBOX["lon_max"],
             }
             
-            # Add authentication if available
-            auth = None
-            if self._username and self._password:
-                auth = (self._username, self._password)
-            
             headers = {
                 "User-Agent": "Chronos-Cloud/1.0",
             }
             
+            # Try authenticated request first if credentials are available
+            auth = None
+            if self._username and self._password:
+                auth = (self._username, self._password)
+            
             response = requests.get(self._api_url, params=params, auth=auth, headers=headers, timeout=10)
+            
+            # If 401 error and we were using auth, try anonymous mode
+            if response.status_code == 401 and auth:
+                logger.warning("OpenSky authentication failed (401), trying anonymous mode")
+                response = requests.get(self._api_url, params=params, auth=None, headers=headers, timeout=10)
+            
             response.raise_for_status()
             
             data = response.json()
-            states = data.get("states", [])
+            states = data.get("states") or []  # Handle None case explicitly
+            
+            # Ensure states is a list (OpenSky API may return null for states)
+            if not isinstance(states, list):
+                logger.warning(f"OpenSky API returned non-list states: {type(states)}, defaulting to empty list")
+                states = []
             
             # OpenSky Network states array format:
             # [icao24, callsign, origin_country, time_position, last_contact, longitude, latitude,

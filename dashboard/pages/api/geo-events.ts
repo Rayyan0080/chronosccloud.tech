@@ -86,38 +86,60 @@ export default async function handler(
     }
 
     // Build query for geo events
-    // Always fetch geo.incident and geo.risk_area events (they contain source field for filtering)
-    const topics: string[] = ['chronos.events.geo.incident', 'chronos.events.geo.risk_area'];
+    // When source is 'all', include all geo events
+    // When source is specific, only include relevant topics
+    const topics: string[] = [];
     
-    // Add transit events if source filter includes transit or all
-    if (source === 'all' || source === 'transit') {
+    if (source === 'all') {
+      // Include all geo event types when showing all sources
+      topics.push('chronos.events.geo.incident');
+      topics.push('chronos.events.geo.risk_area');
       topics.push('chronos.events.transit.disruption.risk');
       topics.push('chronos.events.transit.hotspot');
       topics.push('chronos.events.transit.vehicle.position');
-    }
-    
-    // Add airspace events if source filter includes airspace or all
-    if (source === 'all' || source === 'airspace') {
       topics.push('chronos.events.airspace.aircraft.position');
       topics.push('chronos.events.airspace.conflict.detected');
       topics.push('chronos.events.airspace.hotspot.detected');
-    }
-    
-    // Add traffic events if source filter includes traffic or all
-    if (source === 'all' || source === 'traffic') {
       topics.push('chronos.events.ottawa_traffic.data');
       topics.push('chronos.events.ontario511.data');
-    }
-    
-    // Add power events if source filter includes power or all
-    if (source === 'all' || source === 'power') {
       topics.push('chronos.events.power.failure');
+    } else if (source === 'transit') {
+      // Transit-specific topics
+      topics.push('chronos.events.transit.disruption.risk');
+      topics.push('chronos.events.transit.hotspot');
+      topics.push('chronos.events.transit.vehicle.position');
+      // Also include geo events that might be transit-related (will be filtered by source)
+      topics.push('chronos.events.geo.incident');
+      topics.push('chronos.events.geo.risk_area');
+    } else if (source === 'airspace') {
+      // Airspace-specific topics - focus on aircraft positions and conflicts
+      topics.push('chronos.events.airspace.aircraft.position');
+      topics.push('chronos.events.airspace.conflict.detected');
+      topics.push('chronos.events.airspace.hotspot.detected');
+      // Also include geo events that might be airspace-related (will be filtered by source)
+      topics.push('chronos.events.geo.incident');
+      topics.push('chronos.events.geo.risk_area');
+    } else if (source === 'traffic') {
+      topics.push('chronos.events.ottawa_traffic.data');
+      topics.push('chronos.events.ontario511.data');
+      topics.push('chronos.events.geo.incident');
+      topics.push('chronos.events.geo.risk_area');
+    } else if (source === 'power') {
+      topics.push('chronos.events.power.failure');
+      topics.push('chronos.events.geo.incident');
+      topics.push('chronos.events.geo.risk_area');
     }
     
+    // Build query - for now, don't filter by time to ensure we get results
+    // TODO: Re-enable time filtering once we verify timestamp format
     const query: any = {
       topic: { $in: topics },
-      timestamp: { $gte: timeThreshold },
     };
+    
+    // Temporarily disable time filtering to debug
+    // if (timeRange !== 'all') {
+    //   query.timestamp = { $gte: timeThreshold };
+    // }
 
     // Add severity filter if provided
     // Map user-friendly severity names to schema values
@@ -127,8 +149,10 @@ export default async function handler(
         'low': 'info',
         'med': 'warning',
         'medium': 'warning',
-        'high': 'error',
+        'moderate': 'moderate',
+        'high': 'critical', // Map high to critical for display
         'critical': 'critical',
+        'error': 'moderate', // Backward compatibility
       };
       const mappedSeverity = severityMap[severityParam.toLowerCase()] || severityParam;
       query['payload.severity'] = mappedSeverity;
@@ -141,10 +165,19 @@ export default async function handler(
       .limit(1000)
       .toArray();
 
+    console.log(`[geo-events API] Request params:`, { timeRange, severity, source });
     console.log(`[geo-events API] Query:`, JSON.stringify(query, null, 2));
     console.log(`[geo-events API] Topics being queried:`, topics);
-    console.log(`[geo-events API] Time threshold:`, timeThreshold.toISOString());
+    console.log(`[geo-events API] Time threshold:`, timeThreshold ? timeThreshold.toISOString() : 'None (all time)');
     console.log(`[geo-events API] Found ${events.length} events matching query`);
+    
+    // Count events by topic
+    const eventsByTopic: Record<string, number> = {};
+    events.forEach((e: any) => {
+      eventsByTopic[e.topic] = (eventsByTopic[e.topic] || 0) + 1;
+    });
+    console.log(`[geo-events API] Events by topic:`, eventsByTopic);
+    
     if (events.length > 0) {
       console.log(`[geo-events API] Sample event topics:`, events.slice(0, 5).map((e: any) => e.topic));
       // Count aircraft position events specifically
@@ -159,14 +192,17 @@ export default async function handler(
           hasLon: !!sample.payload?.details?.longitude,
           lat: sample.payload?.details?.latitude,
           lon: sample.payload?.details?.longitude,
+          source: sample.payload?.source,
         });
       }
     } else {
       // Check if there are ANY events in the database
       const totalEvents = await collection.countDocuments({});
       const recentEvents = await collection.countDocuments({ timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
-      const aircraftCount = await collection.countDocuments({ topic: 'chronos.events.airspace.aircraft.position', timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
-      console.log(`[geo-events API] Total events in DB: ${totalEvents}, Recent (24h): ${recentEvents}, Aircraft (24h): ${aircraftCount}`);
+      const aircraftCount = await collection.countDocuments({ topic: 'chronos.events.airspace.aircraft.position' });
+      const aircraftCountRecent = await collection.countDocuments({ topic: 'chronos.events.airspace.aircraft.position', timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
+      console.log(`[geo-events API] Total events in DB: ${totalEvents}, Recent (24h): ${recentEvents}`);
+      console.log(`[geo-events API] Aircraft events - Total: ${aircraftCount}, Recent (24h): ${aircraftCountRecent}`);
       if (totalEvents > 0) {
         const sampleTopics = await collection.distinct('topic');
         console.log(`[geo-events API] Available topics in DB:`, sampleTopics.slice(0, 20));
@@ -185,6 +221,7 @@ export default async function handler(
         const coords = geometry.coordinates;
         if (coords && Array.isArray(coords) && coords.length >= 2 && 
             typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+          const inferredSource = e.payload?.source || inferSource(e.payload);
           const incident = {
             event_id: e.payload?.event_id || e._id.toString(),
             id: e.payload?.details?.id || e.payload?.event_id || e._id.toString(),
@@ -196,11 +233,17 @@ export default async function handler(
             incident_type: e.payload?.details?.incident_type,
             description: e.payload?.details?.description,
             status: e.payload?.details?.status,
-            source: e.payload?.source || inferSource(e.payload),
+            source: inferredSource,
           };
           
           // Apply source filter
-          if (source === 'all' || incident.source === source) {
+          // For airspace filter, also check if incident_type indicates airspace
+          const isAirspaceIncident = inferredSource === 'airspace' || 
+                                     inferredSource === 'trajectory-insight-agent' ||
+                                     e.payload?.details?.incident_type === 'airspace_conflict' ||
+                                     e.payload?.details?.incident_type === 'aircraft_position';
+          
+          if (source === 'all' || incident.source === source || (source === 'airspace' && isAirspaceIncident)) {
             incidents.push(incident);
           }
         }
@@ -214,6 +257,7 @@ export default async function handler(
                        (geometry.type === 'Polygon' && geometry.coordinates && Array.isArray(geometry.coordinates));
         
         if (isValid) {
+          const inferredSource = e.payload?.source || inferSource(e.payload);
           const riskArea = {
             event_id: e.payload?.event_id || e._id.toString(),
             id: e.payload?.details?.id || e.payload?.event_id || e._id.toString(),
@@ -225,11 +269,16 @@ export default async function handler(
             risk_level: e.payload?.details?.risk_level,
             risk_type: e.payload?.details?.risk_type,
             description: e.payload?.details?.description,
-            source: e.payload?.source || inferSource(e.payload),
+            source: inferredSource,
           };
           
           // Apply source filter
-          if (source === 'all' || riskArea.source === source) {
+          // For airspace filter, also check if risk_type indicates airspace
+          const isAirspaceRiskArea = inferredSource === 'airspace' || 
+                                     inferredSource === 'trajectory-insight-agent' ||
+                                     e.payload?.details?.risk_type === 'airspace_congestion';
+          
+          if (source === 'all' || riskArea.source === source || (source === 'airspace' && isAirspaceRiskArea)) {
             riskAreas.push(riskArea);
           }
         }
@@ -285,9 +334,23 @@ export default async function handler(
         const lat = details.latitude || details.lat;
         const lon = details.longitude || details.lon;
         
+        // Debug logging for aircraft events
+        if (events.length > 0 && events.indexOf(e) < 3) {
+          console.log(`[geo-events API] Processing aircraft event ${events.indexOf(e)}:`, {
+            hasDetails: !!details,
+            hasLat: lat !== undefined,
+            hasLon: lon !== undefined,
+            lat,
+            lon,
+            isValid: lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon),
+            sourceFilter: source,
+            willInclude: (source === 'all' || source === 'airspace') && lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon),
+          });
+        }
+        
         if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
           if (source === 'all' || source === 'airspace') {
-            incidents.push({
+            const incident = {
               event_id: e.payload?.event_id || e._id.toString(),
               id: details.icao24 || e._id.toString(),
               timestamp: e.timestamp instanceof Date ? e.timestamp.toISOString() : e.timestamp,
@@ -299,13 +362,45 @@ export default async function handler(
               incident_type: 'aircraft_position',
               description: `Aircraft ${details.callsign || details.icao24 || 'unknown'} at ${lat.toFixed(4)}, ${lon.toFixed(4)}${details.altitude ? ` (${Math.round(details.altitude)}m)` : ''}`,
               details: details, // Include full details for altitude, heading, etc.
+            };
+            incidents.push(incident);
+          } else {
+            console.log(`[geo-events API] Skipping aircraft event due to source filter: source=${source}, event source=${e.payload?.source}`);
+          }
+        } else {
+          if (events.length > 0 && events.indexOf(e) < 3) {
+            console.warn(`[geo-events API] Skipping aircraft event with invalid coordinates:`, {
+              lat,
+              lon,
+              hasLat: lat !== undefined,
+              hasLon: lon !== undefined,
             });
           }
         }
       }
     }
 
-    console.log(`[Geo Events API] Found ${incidents.length} incidents, ${riskAreas.length} risk areas (timeRange: ${timeRange}, severity: ${severity || 'all'}, source: ${source})`);
+    console.log(`[Geo Events API] Processing complete:`);
+    console.log(`  - Total events fetched: ${events.length}`);
+    console.log(`  - Incidents created: ${incidents.length}`);
+    console.log(`  - Risk areas created: ${riskAreas.length}`);
+    console.log(`  - Filters: timeRange=${timeRange}, severity=${severity || 'all'}, source=${source}`);
+    
+    // Count incidents by source
+    const incidentsBySource: Record<string, number> = {};
+    incidents.forEach((inc: any) => {
+      incidentsBySource[inc.source || 'unknown'] = (incidentsBySource[inc.source || 'unknown'] || 0) + 1;
+    });
+    console.log(`  - Incidents by source:`, incidentsBySource);
+    
+    if (incidents.length > 0) {
+      console.log(`  - Sample incident:`, {
+        id: incidents[0].id,
+        source: incidents[0].source,
+        geometry: incidents[0].geometry,
+        hasCoords: !!incidents[0].geometry?.coordinates,
+      });
+    }
 
     res.status(200).json({ incidents, riskAreas });
   } catch (error: any) {

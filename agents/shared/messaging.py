@@ -92,14 +92,49 @@ class NATSBackend(MessageBroker):
         self._subscriptions = {}  # Track active subscriptions
 
     async def connect(self) -> None:
-        """Connect to NATS server."""
+        """Connect to NATS server with retry logic for Windows/Docker."""
         try:
             import nats
             from nats.aio.client import Client as NATS
 
             servers = [f"nats://{self.host}:{self.port}"]
-            self.nc = await nats.connect(servers=servers)
-            logger.info(f"Connected to NATS at {self.host}:{self.port}")
+            
+            # Windows/Docker networking can be slow - use longer timeout
+            # Also add retry logic
+            max_retries = 3
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    self.nc = await asyncio.wait_for(
+                        nats.connect(
+                            servers=servers,
+                            connect_timeout=15,  # 15 second timeout for Windows
+                            reconnect_time_wait=2,
+                            max_reconnect_attempts=3,
+                            allow_reconnect=True,
+                        ),
+                        timeout=20.0  # Overall timeout
+                    )
+                    logger.info(f"Connected to NATS at {self.host}:{self.port}")
+                    return
+                except (asyncio.TimeoutError, Exception) as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2
+                        logger.warning(
+                            f"NATS connection attempt {attempt + 1}/{max_retries} failed: {e}. "
+                            f"Retrying in {wait_time}s..."
+                        )
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(f"Failed to connect to NATS after {max_retries} attempts: {e}")
+                        raise
+            
+            # If we get here, all retries failed
+            if last_error:
+                raise last_error
+                
         except ImportError:
             raise ImportError(
                 "NATS client library not installed. Install with: pip install nats-py"

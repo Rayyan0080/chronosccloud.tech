@@ -497,22 +497,26 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
     const map = mapRef.current;
     
     const addIncidents = async () => {
-      // Check if style is loaded, with retry mechanism
-      if (!map.isStyleLoaded()) {
-        console.log('[Map] Map style not loaded, waiting...');
-        // Use setTimeout as fallback if 'load' event doesn't fire
-        const timeoutId = setTimeout(() => {
-          if (map.isStyleLoaded()) {
+      // Check if map is loaded and ready
+      // For inline styles, we check if the map has been loaded
+      if (!map.loaded() || !map.getSource('osm-tiles')) {
+        console.log('[Map] Map not ready, waiting for load event...');
+        // Wait for map to load
+        const loadHandler = () => {
+          console.log('[Map] Map loaded, proceeding with incident rendering');
+          addIncidents();
+        };
+        map.once('load', loadHandler);
+        // Fallback timeout
+        setTimeout(() => {
+          map.off('load', loadHandler);
+          if (map.loaded() && map.getSource('osm-tiles')) {
+            console.log('[Map] Map ready after timeout, proceeding');
             addIncidents();
           } else {
-            console.warn('[Map] Style still not loaded after timeout, retrying...');
-            setTimeout(addIncidents, 500);
+            console.warn('[Map] Map still not ready after timeout, will retry on next render');
           }
-        }, 1000);
-        map.once('load', () => {
-          clearTimeout(timeoutId);
-          addIncidents();
-        });
+        }, 2000);
         return;
       }
 

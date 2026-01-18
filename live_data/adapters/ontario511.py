@@ -359,16 +359,36 @@ class Ontario511Adapter(LiveAdapter):
             event_timestamp = last_updated or reported or start_date or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             
             # Convert timestamp format if needed
-            if isinstance(event_timestamp, str) and "T" not in event_timestamp and " " in event_timestamp:
+            if isinstance(event_timestamp, int):
+                # Unix timestamp (seconds since epoch)
                 try:
-                    dt = datetime.strptime(event_timestamp, "%Y-%m-%d %H:%M:%S")
-                    event_timestamp = dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-                except ValueError:
+                    dt = datetime.fromtimestamp(event_timestamp, tz=timezone.utc)
+                    event_timestamp = dt.isoformat().replace("+00:00", "Z")
+                except (ValueError, OSError):
+                    # If timestamp is invalid, use current time
+                    event_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            elif isinstance(event_timestamp, str):
+                # String timestamp - handle various formats
+                if "T" not in event_timestamp and " " in event_timestamp:
                     try:
-                        dt = datetime.strptime(event_timestamp, "%Y-%m-%d %H:%M")
+                        dt = datetime.strptime(event_timestamp, "%Y-%m-%d %H:%M:%S")
                         event_timestamp = dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
                     except ValueError:
-                        pass  # Keep original if parsing fails
+                        try:
+                            dt = datetime.strptime(event_timestamp, "%Y-%m-%d %H:%M")
+                            event_timestamp = dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+                        except ValueError:
+                            # If parsing fails, use current time
+                            event_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                elif not event_timestamp.endswith("Z") and "+" not in event_timestamp:
+                    # Ensure timezone is present
+                    try:
+                        dt = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        event_timestamp = dt.isoformat().replace("+00:00", "Z")
+                    except ValueError:
+                        event_timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             
             # Determine sector
             sector_id = f"ontario-{roadway.lower().replace(' ', '-')}"

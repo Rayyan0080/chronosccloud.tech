@@ -27,17 +27,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   ];
 
   // Fetch system status to check LIVE_MODE and adapter status
-  useEffect(() => {
-    const fetchSystemStatus = async () => {
-      try {
-        const res = await fetch('/api/system-status');
-        const data = await res.json();
-        setSystemStatus(data);
-      } catch (error) {
-        console.error('Error fetching system status:', error);
-      }
-    };
+  const fetchSystemStatus = async () => {
+    try {
+      const res = await fetch('/api/system-status');
+      const data = await res.json();
+      setSystemStatus(data);
+    } catch (error) {
+      console.error('Error fetching system status:', error);
+    }
+  };
 
+  useEffect(() => {
     fetchSystemStatus();
     // Refresh every 30 seconds
     const interval = setInterval(fetchSystemStatus, 30000);
@@ -71,15 +71,44 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
             {/* Status Badges */}
             <div className="flex items-center gap-2">
-              {/* LIVE_MODE Badge */}
+              {/* LIVE_MODE Badge - Toggle Button */}
               {systemStatus && (
-                <div className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-white text-xs font-semibold ${
-                  systemStatus.live_mode === 'on' 
-                    ? 'bg-green-600 bg-opacity-90' 
-                    : 'bg-gray-600 bg-opacity-90'
-                }`}>
+                <button
+                  onClick={async () => {
+                    const newMode = systemStatus.live_mode === 'on' ? 'off' : 'on';
+                    try {
+                      const response = await fetch('/api/live-mode/toggle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ live_mode: newMode }),
+                      });
+                      const data = await response.json();
+                      if (data.success) {
+                        // Update local state immediately
+                        setSystemStatus({ ...systemStatus, live_mode: newMode });
+                        // Show notification
+                        alert(data.message || `LIVE_MODE set to ${newMode}. Please restart the live_data runner.`);
+                        // Refresh status after a short delay
+                        setTimeout(() => {
+                          fetchSystemStatus();
+                        }, 1000);
+                      } else {
+                        alert(`Error: ${data.error || 'Failed to update LIVE_MODE'}`);
+                      }
+                    } catch (error: any) {
+                      console.error('Error toggling LIVE_MODE:', error);
+                      alert(`Error: ${error.message || 'Failed to update LIVE_MODE'}`);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-white text-xs font-semibold transition-all hover:opacity-80 cursor-pointer ${
+                    systemStatus.live_mode === 'on' 
+                      ? 'bg-green-600 bg-opacity-90 hover:bg-green-700' 
+                      : 'bg-gray-600 bg-opacity-90 hover:bg-gray-700'
+                  }`}
+                  title={`Click to toggle LIVE_MODE (currently ${systemStatus.live_mode}). Restart live_data runner after toggling.`}
+                >
                   <span>LIVE: {systemStatus.live_mode.toUpperCase()}</span>
-                </div>
+                </button>
               )}
               
               {/* Adapter Degradation Badge */}

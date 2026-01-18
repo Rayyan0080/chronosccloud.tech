@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Map Debug Test</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        console.log('MapLibre version:', maplibregl.version);
+        console.log('Initializing map...');
+        
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                version: 8,
+                sources: {
+                    'osm-tiles': {
+                        type: 'raster',
+                        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '© OpenStreetMap contributors',
+                    },
+                },
+                layers: [
+                    {
+                        id: 'osm-tiles-layer',
+                        type: 'raster',
+                        source: 'osm-tiles',
+                        minzoom: 0,
+                        maxzoom: 19,
+                    },
+                ],
+            },
+            center: [-75.6972, 45.4215], // Ottawa
+            zoom: 10,
+        });
+
+        map.on('load', () => {
+            console.log('✅ Map loaded successfully!');
+            document.body.style.backgroundColor = '#0f172a';
+        });
+
+        map.on('error', (e) => {
+            console.error('❌ Map error:', e);
+        });
+
+        map.on('styledata', () => {
+            console.log('✅ Style data loaded');
+        });
+    </script>
+</body>
+</html>
+

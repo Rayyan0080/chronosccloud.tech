@@ -12,6 +12,7 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Dict, Any, Optional
 from uuid import uuid4
 
@@ -22,6 +23,65 @@ logger = logging.getLogger(__name__)
 
 # Import prompt template
 from ai.prompts import RECOVERY_PLAN_PROMPT
+
+
+class PlannerProvider(str, Enum):
+    """Enum for planner provider types."""
+    RULES = "rules"
+    GEMINI = "gemini"
+    CEREBRAS = "cerebras"
+
+
+# JSON Schema for recovery plan validation
+RECOVERY_PLAN_SCHEMA = {
+    "type": "object",
+    "required": ["plan_id", "plan_name", "status", "steps"],
+    "properties": {
+        "plan_id": {"type": "string"},
+        "plan_name": {"type": "string"},
+        "status": {"type": "string"},
+        "steps": {"type": "array", "items": {"type": "string"}},
+        "estimated_completion": {"type": "string"},
+        "assigned_agents": {"type": "array", "items": {"type": "string"}},
+        "reasoning": {"type": "string"},
+    },
+}
+
+
+def _validate_recovery_plan(plan_data: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """
+    Validate recovery plan against schema.
+    
+    Args:
+        plan_data: Recovery plan dictionary to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check required fields
+    required_fields = ["plan_id", "plan_name", "status", "steps"]
+    missing_fields = [field for field in required_fields if field not in plan_data]
+    
+    if missing_fields:
+        return False, f"Missing required fields: {missing_fields}"
+    
+    # Validate types
+    if not isinstance(plan_data.get("plan_id"), str):
+        return False, "plan_id must be a string"
+    
+    if not isinstance(plan_data.get("plan_name"), str):
+        return False, "plan_name must be a string"
+    
+    if not isinstance(plan_data.get("status"), str):
+        return False, "status must be a string"
+    
+    if not isinstance(plan_data.get("steps"), list):
+        return False, "steps must be a list"
+    
+    if plan_data.get("steps") and not all(isinstance(step, str) for step in plan_data["steps"]):
+        return False, "All steps must be strings"
+    
+    return True, None
 
 
 def _generate_fallback_plan(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -120,18 +180,23 @@ def _extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
 def get_recovery_plan(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate recovery plan using configured LLM provider.
+    
+    SAFETY: This function NEVER crashes. Always falls back to rules-based planner
+    if LLM APIs fail, timeout, or return invalid JSON.
 
     Tries providers in order:
     1. Cerebras (if LLM_SERVICE_API_KEY is set)
     2. Gemini (if GEMINI_API_KEY is set)
-    3. Fallback plan (if no API keys)
+    3. Rules-based fallback plan (always available)
 
     Args:
         event: Power failure event dictionary
 
     Returns:
-        Recovery plan dictionary
+        Recovery plan dictionary (always valid, never None)
     """
+    provider_used = PlannerProvider.RULES.value
+    
     # Check for Cerebras first
     cerebras_api_key = os.getenv("LLM_SERVICE_API_KEY")
     cerebras_endpoint = os.getenv("LLM_SERVICE_ENDPOINT", "https://api.cerebras.ai/v1")
@@ -139,7 +204,10 @@ def get_recovery_plan(event: Dict[str, Any]) -> Dict[str, Any]:
 
     if cerebras_api_key:
         try:
-            return _get_recovery_plan_cerebras(event, cerebras_endpoint, cerebras_api_key, cerebras_model)
+            plan = _get_recovery_plan_cerebras(event, cerebras_endpoint, cerebras_api_key, cerebras_model)
+            provider_used = PlannerProvider.CEREBRAS.value
+            logger.info(f"Recovery plan generated using {provider_used.upper()} provider")
+            return plan
         except Exception as e:
             logger.warning(f"Cerebras API failed: {e}, trying Gemini...")
 
@@ -147,13 +215,22 @@ def get_recovery_plan(event: Dict[str, Any]) -> Dict[str, Any]:
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if gemini_api_key:
         try:
-            return _get_recovery_plan_gemini(event, gemini_api_key)
+            plan = _get_recovery_plan_gemini(event, gemini_api_key)
+            provider_used = PlannerProvider.GEMINI.value
+            logger.info(f"Recovery plan generated using {provider_used.upper()} provider")
+            return plan
         except Exception as e:
-            logger.warning(f"Gemini API failed: {e}, using fallback...")
+            logger.warning(f"Gemini API failed: {e}, using rules-based fallback...")
 
-    # Use fallback plan
-    logger.info("No LLM API keys configured, using fallback recovery plan")
-    return _generate_fallback_plan(event)
+    # Use rules-based fallback plan (always available, never fails)
+    logger.info(f"Using {provider_used.upper()} provider (fallback)")
+    fallback_plan = _generate_fallback_plan(event)
+    fallback_plan["_llm_provider"] = "rules"
+    fallback_plan["_llm_model"] = "fallback"
+    fallback_plan["provider"] = "rules"
+    fallback_plan["model"] = "fallback"
+    fallback_plan["_fallback"] = True
+    return fallback_plan
 
 
 def _get_recovery_plan_cerebras(
@@ -201,32 +278,37 @@ def _get_recovery_plan_cerebras(
         "max_tokens": 1000,
     }
 
+    # Add timeout to prevent hanging (30 seconds max)
     response = requests.post(url, json=data, headers=headers, timeout=30)
 
     if response.status_code != 200:
-        raise Exception(f"Cerebras API error: {response.status_code} - {response.text}")
+        error_text = response.text[:200] if len(response.text) > 200 else response.text
+        raise Exception(f"Cerebras API error: {response.status_code} - {error_text}")
 
     response_data = response.json()
     response_text = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
     logger.debug(f"Cerebras response: {response_text[:500]}...")
 
-    # Parse JSON from response
+    # Parse JSON from response (STRICT parsing)
     plan_data = _extract_json_from_text(response_text)
 
     if not plan_data:
-        logger.warning("Failed to parse JSON from Cerebras response, using fallback")
-        return _generate_fallback_plan(event)
+        logger.warning("Failed to parse JSON from Cerebras response, using rules-based fallback")
+        raise ValueError("Invalid JSON response from Cerebras API")
 
-    # Validate required fields
-    required_fields = ["plan_id", "plan_name", "status", "steps"]
-    missing_fields = [field for field in required_fields if field not in plan_data]
+    # Validate against schema (STRICT validation)
+    is_valid, error_msg = _validate_recovery_plan(plan_data)
+    if not is_valid:
+        logger.warning(f"Cerebras response validation failed: {error_msg}, using rules-based fallback")
+        raise ValueError(f"Invalid recovery plan schema: {error_msg}")
 
-    if missing_fields:
-        logger.warning(f"Missing required fields in Cerebras response: {missing_fields}, using fallback")
-        return _generate_fallback_plan(event)
-
-    logger.info("Recovery plan generated successfully using Cerebras")
+    logger.info("Recovery plan generated successfully using Cerebras (validated)")
+    # Add provider info to plan
+    plan_data["_llm_provider"] = "cerebras"
+    plan_data["_llm_model"] = model
+    plan_data["provider"] = "cerebras"
+    plan_data["model"] = model
     return plan_data
 
 
@@ -272,21 +354,24 @@ def _get_recovery_plan_gemini(event: Dict[str, Any], api_key: str) -> Dict[str, 
 
     logger.debug(f"Gemini response: {response_text[:500]}...")
 
-    # Parse JSON from response
+    # Parse JSON from response (STRICT parsing)
     plan_data = _extract_json_from_text(response_text)
 
     if not plan_data:
-        logger.warning("Failed to parse JSON from Gemini response, using fallback")
-        return _generate_fallback_plan(event)
+        logger.warning("Failed to parse JSON from Gemini response, using rules-based fallback")
+        raise ValueError("Invalid JSON response from Gemini API")
 
-    # Validate required fields
-    required_fields = ["plan_id", "plan_name", "status", "steps"]
-    missing_fields = [field for field in required_fields if field not in plan_data]
+    # Validate against schema (STRICT validation)
+    is_valid, error_msg = _validate_recovery_plan(plan_data)
+    if not is_valid:
+        logger.warning(f"Gemini response validation failed: {error_msg}, using rules-based fallback")
+        raise ValueError(f"Invalid recovery plan schema: {error_msg}")
 
-    if missing_fields:
-        logger.warning(f"Missing required fields in Gemini response: {missing_fields}, using fallback")
-        return _generate_fallback_plan(event)
-
-    logger.info("Recovery plan generated successfully using Gemini")
+    logger.info("Recovery plan generated successfully using Gemini (validated)")
+    # Add provider info to plan
+    plan_data["_llm_provider"] = "gemini"
+    plan_data["_llm_model"] = "gemini-pro"
+    plan_data["provider"] = "gemini"
+    plan_data["model"] = "gemini-pro"
     return plan_data
 

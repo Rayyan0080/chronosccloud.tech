@@ -23,8 +23,11 @@ export default async function handler(
   }
 
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 2000;
     const topic = req.query.topic as string | undefined;
+    const since = req.query.since as string | undefined;
+    const severity = req.query.severity as string | undefined;
+    const source = req.query.source as string | undefined;
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGO_DB || 'chronos');
@@ -32,16 +35,43 @@ export default async function handler(
 
     // Build query
     const query: any = {};
+    
     if (topic) {
       query.topic = topic;
     }
+    
+    if (since) {
+      const sinceDate = new Date(since);
+      query.timestamp = { $gte: sinceDate.toISOString() };
+    }
+    
+    // Note: severity and source are in payload, so we'll filter after fetching
+    // MongoDB doesn't easily support nested field queries without aggregation
 
     // Fetch events
-    const events = await collection
+    let events = await collection
       .find(query)
       .sort({ timestamp: -1 })
       .limit(limit)
       .toArray();
+
+    // Filter by severity and source if provided
+    if (severity || source) {
+      events = events.filter((event: any) => {
+        const payload = event.payload || {};
+        const eventSeverity = (payload.severity || 'info').toLowerCase();
+        const eventSource = (payload.source || '').toLowerCase();
+        
+        const severityMatch = !severity || 
+          (severity === 'high' && ['high', 'critical', 'moderate', 'error'].includes(eventSeverity)) ||  // 'error' for backward compatibility
+          (severity === 'med' && ['med', 'medium', 'warning'].includes(eventSeverity)) ||
+          (severity === 'low' && ['low', 'info'].includes(eventSeverity));
+        
+        const sourceMatch = !source || eventSource.includes(source.toLowerCase());
+        
+        return severityMatch && sourceMatch;
+      });
+    }
 
     // Convert to response format
     const formattedEvents: Event[] = events.map((event: any) => ({

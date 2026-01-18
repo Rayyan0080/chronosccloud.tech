@@ -6,7 +6,7 @@ This module provides Pydantic models for event validation and serialization.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, validator
@@ -16,7 +16,7 @@ class Severity(str, Enum):
     """Event severity levels."""
     INFO = "info"
     WARNING = "warning"
-    ERROR = "error"
+    MODERATE = "moderate"  # Renamed from ERROR for clarity
     CRITICAL = "critical"
 
 
@@ -361,6 +361,54 @@ class AirspacePlanUploadedEvent(BaseEvent):
                 "upload_timestamp": datetime.utcnow().isoformat() + "Z",
                 "uploaded_by": "operator-001",
                 "flight_count": 127
+            }
+        }
+
+
+class AircraftPositionDetails(BaseModel):
+    """Details for airspace.aircraft.position events."""
+    icao24: str = Field(..., description="ICAO 24-bit address")
+    callsign: Optional[str] = Field(None, description="Aircraft callsign")
+    latitude: float = Field(..., description="Aircraft latitude")
+    longitude: float = Field(..., description="Aircraft longitude")
+    altitude: Optional[float] = Field(None, description="Aircraft altitude in meters (barometric)")
+    velocity: Optional[float] = Field(None, description="Aircraft velocity in m/s")
+    heading: Optional[float] = Field(None, description="Aircraft heading in degrees")
+    vertical_rate: Optional[float] = Field(None, description="Vertical rate in m/s")
+    on_ground: Optional[bool] = Field(None, description="Whether aircraft is on ground")
+    time_position: Optional[int] = Field(None, description="Unix timestamp of position")
+    data_source: str = Field(default="ads-b", description="Data source (e.g., 'ads-b', 'opensky')")
+    disclaimer: str = Field(default="ADS-B derived public feed - NOT official ATC data", description="Data disclaimer")
+
+
+class AircraftPositionEvent(BaseEvent):
+    """Aircraft position event schema."""
+    details: AircraftPositionDetails = Field(..., description="Aircraft position specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example aircraft position event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "opensky_airspace",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-airspace",
+            "summary": "Aircraft ACA123 position update",
+            "correlation_id": None,
+            "details": {
+                "icao24": "a1b2c3",
+                "callsign": "ACA123",
+                "latitude": 45.4215,
+                "longitude": -75.6972,
+                "altitude": 10000.0,
+                "velocity": 200.0,
+                "heading": 180.0,
+                "vertical_rate": 5.0,
+                "on_ground": False,
+                "time_position": int(datetime.utcnow().timestamp()),
+                "data_source": "ads-b",
+                "disclaimer": "ADS-B derived public feed - NOT official ATC data"
             }
         }
 
@@ -906,6 +954,278 @@ class GeoRiskAreaEvent(BaseEvent):
         }
 
 
+# Transit Domain Models (OC Transpo)
+class TransitGTFSRTFetchStartedDetails(BaseModel):
+    """Details for transit.gtfsrt.fetch.started events."""
+    feed_url: str = Field(..., description="GTFS-RT feed URL")
+    feed_type: Optional[str] = Field(None, description="Feed type (vehicle_positions|trip_updates|alerts)")
+    fetch_id: Optional[str] = Field(None, description="Unique fetch identifier")
+    expected_entities: Optional[int] = Field(None, description="Expected number of entities in feed")
+
+
+class TransitGTFSRTFetchStartedEvent(BaseEvent):
+    """Transit GTFS-RT fetch started event schema."""
+    details: TransitGTFSRTFetchStartedDetails = Field(..., description="GTFS-RT fetch specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example GTFS-RT fetch started event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-gtfsrt-fetcher",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": "GTFS-RT feed fetch started",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "feed_url": "https://api.octranspo.com/gtfsrt/vehicle_positions",
+                "feed_type": "vehicle_positions",
+                "fetch_id": f"FETCH-{str(uuid4())[:8].upper()}",
+                "expected_entities": 450
+            }
+        }
+
+
+class TransitVehiclePositionDetails(BaseModel):
+    """Details for transit.vehicle.position events."""
+    vehicle_id: str = Field(..., description="Vehicle identifier")
+    trip_id: Optional[str] = Field(None, description="Trip identifier")
+    route_id: Optional[str] = Field(None, description="Route identifier")
+    latitude: Optional[float] = Field(None, description="Vehicle latitude")
+    longitude: Optional[float] = Field(None, description="Vehicle longitude")
+    bearing: Optional[float] = Field(None, description="Vehicle bearing in degrees")
+    speed: Optional[float] = Field(None, description="Vehicle speed in m/s")
+    occupancy_status: Optional[str] = Field(None, description="Occupancy status")
+    current_stop_sequence: Optional[int] = Field(None, description="Current stop sequence")
+    current_status: Optional[str] = Field(None, description="Current status (INCOMING_AT|STOPPED_AT|IN_TRANSIT_TO)")
+    timestamp: Optional[str] = Field(None, description="Position timestamp (ISO 8601)")
+
+
+class TransitVehiclePositionEvent(BaseEvent):
+    """Transit vehicle position event schema."""
+    details: TransitVehiclePositionDetails = Field(..., description="Vehicle position specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example vehicle position event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-vehicle-tracker",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": f"Vehicle {str(uuid4())[:8].upper()} position update",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "vehicle_id": f"VEH-{str(uuid4())[:8].upper()}",
+                "trip_id": "TRIP-12345",
+                "route_id": "ROUTE-95",
+                "latitude": 45.4215,
+                "longitude": -75.6972,
+                "bearing": 180.0,
+                "speed": 12.5,
+                "occupancy_status": "MANY_SEATS_AVAILABLE",
+                "current_stop_sequence": 15,
+                "current_status": "IN_TRANSIT_TO",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
+class TransitTripUpdateDetails(BaseModel):
+    """Details for transit.trip.update events."""
+    trip_id: str = Field(..., description="Trip identifier")
+    route_id: Optional[str] = Field(None, description="Route identifier")
+    vehicle_id: Optional[str] = Field(None, description="Vehicle identifier")
+    stop_time_updates: Optional[List[Dict[str, Any]]] = Field(None, description="List of stop time updates")
+    delay: Optional[int] = Field(None, description="Trip delay in seconds")
+    timestamp: Optional[str] = Field(None, description="Update timestamp (ISO 8601)")
+
+
+class TransitTripUpdateEvent(BaseEvent):
+    """Transit trip update event schema."""
+    details: TransitTripUpdateDetails = Field(..., description="Trip update specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example trip update event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-trip-monitor",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": f"Trip {str(uuid4())[:8].upper()} update received",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "trip_id": f"TRIP-{str(uuid4())[:8].upper()}",
+                "route_id": "ROUTE-95",
+                "vehicle_id": f"VEH-{str(uuid4())[:8].upper()}",
+                "stop_time_updates": [
+                    {
+                        "stop_sequence": 15,
+                        "stop_id": "STOP-12345",
+                        "arrival_time": (datetime.utcnow().replace(minute=30)).isoformat() + "Z",
+                        "departure_time": (datetime.utcnow().replace(minute=32)).isoformat() + "Z"
+                    }
+                ],
+                "delay": 120,
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
+class TransitDisruptionRiskDetails(BaseModel):
+    """Details for transit.disruption.risk events."""
+    risk_id: str = Field(..., description="Unique risk identifier")
+    risk_type: Optional[str] = Field(None, description="Risk type (delay|congestion|service_interruption|weather)")
+    severity_level: Optional[str] = Field(None, description="Risk severity (low|medium|high|critical)")
+    affected_routes: Optional[List[str]] = Field(None, description="List of affected route IDs")
+    affected_stops: Optional[List[str]] = Field(None, description="List of affected stop IDs")
+    location: Optional[Dict[str, Any]] = Field(None, description="Risk location (lat, lon, radius_meters)")
+    predicted_start_time: Optional[str] = Field(None, description="Predicted start time (ISO 8601)")
+    predicted_end_time: Optional[str] = Field(None, description="Predicted end time (ISO 8601)")
+    confidence_score: Optional[float] = Field(None, description="Confidence score (0.0-1.0)")
+    risk_score: Optional[float] = Field(None, description="Risk score (0.0-1.0)")
+    cause: Optional[str] = Field(None, description="Risk cause (delay_cluster|headway_gap|stalled_vehicle)")
+    description: Optional[str] = Field(None, description="Risk description")
+
+
+class TransitDisruptionRiskEvent(BaseEvent):
+    """Transit disruption risk event schema."""
+    details: TransitDisruptionRiskDetails = Field(..., description="Disruption risk specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example disruption risk event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-risk-analyzer",
+            "severity": Severity.WARNING,
+            "sector_id": "ottawa-transit",
+            "summary": f"Disruption risk {str(uuid4())[:8].upper()} detected",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "risk_id": f"RISK-{str(uuid4())[:8].upper()}",
+                "risk_type": "delay",
+                "severity_level": "high",
+                "affected_routes": ["ROUTE-95", "ROUTE-97"],
+                "affected_stops": ["STOP-12345", "STOP-12346"],
+                "location": {
+                    "latitude": 45.4215,
+                    "longitude": -75.6972
+                },
+                "predicted_start_time": (datetime.utcnow().replace(hour=14, minute=0)).isoformat() + "Z",
+                "predicted_end_time": (datetime.utcnow().replace(hour=16, minute=0)).isoformat() + "Z",
+                "confidence_score": 0.75,
+                "description": "High probability of delays due to traffic congestion"
+            }
+        }
+
+
+class TransitHotspotDetails(BaseModel):
+    """Details for transit.hotspot events."""
+    hotspot_id: str = Field(..., description="Unique hotspot identifier")
+    hotspot_type: Optional[str] = Field(None, description="Hotspot type (congestion|delay|service_issue)")
+    location: Optional[Dict[str, Any]] = Field(None, description="Hotspot location (lat, lon, radius)")
+    affected_routes: Optional[List[str]] = Field(None, description="List of affected route IDs")
+    affected_vehicles: Optional[List[str]] = Field(None, description="List of affected vehicle IDs")
+    severity: Optional[str] = Field(None, description="Hotspot severity (low|medium|high|critical)")
+    start_time: Optional[str] = Field(None, description="Hotspot start time (ISO 8601)")
+    end_time: Optional[str] = Field(None, description="Hotspot end time (ISO 8601)")
+    vehicle_count: Optional[int] = Field(None, description="Number of vehicles in hotspot")
+    average_delay: Optional[float] = Field(None, description="Average delay in minutes")
+    description: Optional[str] = Field(None, description="Hotspot description")
+
+
+class TransitHotspotEvent(BaseEvent):
+    """Transit hotspot event schema."""
+    details: TransitHotspotDetails = Field(..., description="Hotspot specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example hotspot event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-hotspot-detector",
+            "severity": Severity.WARNING,
+            "sector_id": "ottawa-transit",
+            "summary": f"Transit hotspot {str(uuid4())[:8].upper()} detected",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "hotspot_id": f"HOTSPOT-{str(uuid4())[:8].upper()}",
+                "hotspot_type": "congestion",
+                "location": {
+                    "latitude": 45.4215,
+                    "longitude": -75.6972,
+                    "radius_meters": 500
+                },
+                "affected_routes": ["ROUTE-95", "ROUTE-97"],
+                "affected_vehicles": [f"VEH-{str(uuid4())[:8].upper()}" for _ in range(3)],
+                "severity": "high",
+                "start_time": (datetime.utcnow().replace(hour=14, minute=0)).isoformat() + "Z",
+                "end_time": (datetime.utcnow().replace(hour=15, minute=30)).isoformat() + "Z",
+                "vehicle_count": 12,
+                "average_delay": 8.5,
+                "description": "High congestion hotspot in downtown core"
+            }
+        }
+
+
+class TransitReportReadyDetails(BaseModel):
+    """Details for transit.report.ready events."""
+    report_id: str = Field(..., description="Unique report identifier")
+    report_type: Optional[str] = Field(None, description="Report type (summary|disruption|performance|hotspot)")
+    report_period_start: Optional[str] = Field(None, description="Report period start time (ISO 8601)")
+    report_period_end: Optional[str] = Field(None, description="Report period end time (ISO 8601)")
+    report_url: Optional[str] = Field(None, description="URL or path to the report")
+    report_format: Optional[str] = Field(None, description="Report format (PDF|JSON|HTML|CSV)")
+    total_vehicles: Optional[int] = Field(None, description="Total vehicles tracked")
+    disruptions_detected: Optional[int] = Field(None, description="Number of disruptions detected")
+    hotspots_detected: Optional[int] = Field(None, description="Number of hotspots detected")
+    average_delay_minutes: Optional[float] = Field(None, description="Average delay in minutes")
+    generated_by: Optional[str] = Field(None, description="System that generated the report")
+    report_size: Optional[int] = Field(None, description="Report size in bytes")
+
+
+class TransitReportReadyEvent(BaseEvent):
+    """Transit report ready event schema."""
+    details: TransitReportReadyDetails = Field(..., description="Report ready specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example report ready event."""
+        report_id = f"RPT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        period_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        period_end = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0)
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "transit-report-generator",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": f"Transit report {report_id} ready for review",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "report_id": report_id,
+                "report_type": "summary",
+                "report_period_start": period_start.isoformat() + "Z",
+                "report_period_end": period_end.isoformat() + "Z",
+                "report_url": f"/reports/transit/{report_id}.pdf",
+                "report_format": "PDF",
+                "total_vehicles": 450,
+                "disruptions_detected": 12,
+                "hotspots_detected": 5,
+                "average_delay_minutes": 3.2,
+                "generated_by": "transit-analytics-engine",
+                "report_size": 1536000
+            }
+        }
+
+
 # Event type mapping
 EVENT_SCHEMAS = {
     "power.failure": PowerFailureEvent,
@@ -913,6 +1233,7 @@ EVENT_SCHEMAS = {
     "operator.status": OperatorStatusEvent,
     "audit.decision": AuditDecisionEvent,
     "airspace.plan.uploaded": AirspacePlanUploadedEvent,
+    "airspace.aircraft.position": AircraftPositionEvent,
     "airspace.flight.parsed": AirspaceFlightParsedEvent,
     "airspace.trajectory.sampled": AirspaceTrajectorySampledEvent,
     "airspace.conflict.detected": AirspaceConflictDetectedEvent,
@@ -921,6 +1242,12 @@ EVENT_SCHEMAS = {
     "airspace.report.ready": AirspaceReportReadyEvent,
     "geo.incident": GeoIncidentEvent,
     "geo.risk_area": GeoRiskAreaEvent,
+    "transit.gtfsrt.fetch.started": TransitGTFSRTFetchStartedEvent,
+    "transit.vehicle.position": TransitVehiclePositionEvent,
+    "transit.trip.update": TransitTripUpdateEvent,
+    "transit.disruption.risk": TransitDisruptionRiskEvent,
+    "transit.hotspot": TransitHotspotEvent,
+    "transit.report.ready": TransitReportReadyEvent,
 }
 
 

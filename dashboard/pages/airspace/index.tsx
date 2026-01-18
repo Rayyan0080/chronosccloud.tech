@@ -1,7 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import dynamic from 'next/dynamic';
 import AutonomyBadge from '../../components/AutonomyBadge';
-import AirspaceCesiumMap from '../../components/AirspaceCesiumMap';
+
+// Dynamically import clean OttawaMap with SSR disabled
+const OttawaMapClean = dynamic(
+  () => import('../../components/OttawaMapClean'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex items-center justify-center bg-gray-900">
+        <div className="text-center text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading Map...</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 type Tab = 'upload' | 'overview' | 'map' | 'conflicts' | 'hotspots' | 'validation';
 
@@ -311,7 +327,6 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 // Map Tab Component
 function MapTab() {
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [planId, setPlanId] = useState<string>('');
 
   useEffect(() => {
@@ -328,19 +343,13 @@ function MapTab() {
       setData(result);
     } catch (error) {
       console.error('Error fetching map data:', error);
-    } finally {
-      setLoading(false);
     }
   };
-
-  if (loading) {
-    return <div className="text-white">Loading map data...</div>;
-  }
 
   return (
     <div className="space-y-6">
       <div className="bg-dark-surface rounded-lg p-6 border border-dark-border">
-        <h2 className="text-2xl font-bold text-white mb-4">3D Airspace Map</h2>
+        <h2 className="text-2xl font-bold text-white mb-4">Airspace Map</h2>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-300 mb-2">Filter by Plan ID (optional)</label>
           <input
@@ -351,32 +360,28 @@ function MapTab() {
             className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
           />
         </div>
-        <div className="mt-4 text-sm text-gray-400">
-          <p>
-            {data?.trajectories?.length || 0} trajectories, {data?.conflicts?.length || 0} conflicts,{' '}
-            {data?.hotspots?.length || 0} hotspots
-          </p>
-        </div>
+        {data && (
+          <div className="mt-4 text-sm text-gray-400">
+            <p>
+              {data?.trajectories?.length || 0} trajectories, {data?.conflicts?.length || 0} conflicts,{' '}
+              {data?.hotspots?.length || 0} hotspots
+            </p>
+          </div>
+        )}
       </div>
 
-      <div className="bg-dark-surface rounded-lg p-6 border border-dark-border">
-        <div className="h-[600px] w-full rounded-lg overflow-hidden">
-          {data && (data.trajectories?.length > 0 || data.conflicts?.length > 0 || data.hotspots?.length > 0) ? (
-            <AirspaceCesiumMap
-              trajectories={data.trajectories || []}
-              conflicts={data.conflicts || []}
-              hotspots={data.hotspots || []}
-            />
-          ) : (
-            <div className="h-full bg-gray-900 rounded-lg flex items-center justify-center">
-              <div className="text-center text-gray-400">
-                <p className="text-lg mb-2">No data to display</p>
-                <p className="text-sm">Upload a flight plan to see 3D visualization</p>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="bg-dark-surface rounded-lg border border-dark-border overflow-hidden" style={{ height: 'calc(100vh - 400px)', minHeight: '600px' }}>
+        <AirspaceMapView planId={planId} />
       </div>
+    </div>
+  );
+}
+
+// Airspace-specific map view component (filters to airspace events)
+function AirspaceMapView({ planId }: { planId: string }) {
+  return (
+    <div className="w-full h-full">
+      <OttawaMapClean defaultSource="airspace" />
     </div>
   );
 }

@@ -1,8 +1,22 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useState, useEffect } from 'react';
+
+type SystemStatus = {
+  live_mode: 'on' | 'off';
+  transit_mode: 'live' | 'mock';
+  adapters: Array<{
+    name: string;
+    mode: 'live' | 'mock' | 'unknown';
+    enabled: boolean;
+    degraded: boolean;
+  }>;
+  degraded_adapters: string[];
+};
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   const navItems = [
     { href: '/', label: 'Event Feed' },
@@ -11,6 +25,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: '/compare', label: 'Agentic Compare' },
     { href: '/audit', label: 'Audit' },
   ];
+
+  // Fetch system status to check LIVE_MODE and adapter status
+  useEffect(() => {
+    const fetchSystemStatus = async () => {
+      try {
+        const res = await fetch('/api/system-status');
+        const data = await res.json();
+        setSystemStatus(data);
+      } catch (error) {
+        console.error('Error fetching system status:', error);
+      }
+    };
+
+    fetchSystemStatus();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchSystemStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen bg-dark-bg">
@@ -36,6 +68,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 ))}
               </div>
+            </div>
+            {/* Status Badges */}
+            <div className="flex items-center gap-2">
+              {/* LIVE_MODE Badge */}
+              {systemStatus && (
+                <div className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-white text-xs font-semibold ${
+                  systemStatus.live_mode === 'on' 
+                    ? 'bg-green-600 bg-opacity-90' 
+                    : 'bg-gray-600 bg-opacity-90'
+                }`}>
+                  <span>LIVE: {systemStatus.live_mode.toUpperCase()}</span>
+                </div>
+              )}
+              
+              {/* Adapter Degradation Badge */}
+              {systemStatus && systemStatus.degraded_adapters.length > 0 && (
+                <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 bg-yellow-600 bg-opacity-90 text-white text-xs font-semibold">
+                  <span>⚠️</span>
+                  <span>Adapter degraded (falling back to mock)</span>
+                </div>
+              )}
+              
+              {/* Transit Mode Badge (only show if transit is mock and LIVE_MODE is on) */}
+              {systemStatus && systemStatus.live_mode === 'on' && systemStatus.transit_mode === 'mock' && (
+                <div className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 bg-yellow-600 bg-opacity-90 text-white text-xs font-semibold">
+                  <span>⚠️</span>
+                  <span>Transit: MOCK</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -11,16 +11,21 @@ from typing import Optional
 def get_broker_backend() -> str:
     """
     Get the message broker backend type from environment variable.
-    Auto-detects Solace if SOLACE_HOST is set, otherwise defaults to NATS.
+    Enforces a SINGLE active broker at runtime.
+    
+    CRITICAL: Only ONE broker backend can be active at a time.
+    - If BROKER_BACKEND is explicitly set, use that (nats|solace)
+    - If not set, auto-detects: Solace if SOLACE_HOST is set, otherwise NATS
+    - If Solace connection fails, does NOT auto-fallback (must be explicit)
 
     Returns:
-        Backend type: "solace" if SOLACE_HOST is set, otherwise "nats"
+        Backend type: "nats" or "solace"
 
     Environment Variables:
         BROKER_BACKEND: Backend type ("nats" or "solace") - optional, auto-detected if not set
-        SOLACE_HOST: If set, will use Solace backend
+        SOLACE_HOST: If set and BROKER_BACKEND not set, will use Solace backend
     """
-    # Check if explicitly set
+    # Check if explicitly set (PREFERRED - explicit configuration)
     backend = os.getenv("BROKER_BACKEND", "").lower().strip()
     
     if backend:
@@ -34,7 +39,7 @@ def get_broker_backend() -> str:
     if os.getenv("SOLACE_HOST"):
         return "solace"
     
-    # Default to NATS
+    # Default to NATS (most stable for demos)
     return "nats"
 
 
@@ -64,16 +69,52 @@ def get_solace_config() -> dict:
         SOLACE_USERNAME: Solace username (required)
         SOLACE_PASSWORD: Solace password (required)
         SOLACE_PORT: Solace port (default: 55555)
+    
+    Raises:
+        ValueError: If required configuration is missing or invalid
     """
-    host = os.getenv("SOLACE_HOST")
+    host = os.getenv("SOLACE_HOST", "").strip()
     if not host:
-        raise ValueError("SOLACE_HOST environment variable is required for Solace backend")
+        raise ValueError(
+            "SOLACE_HOST environment variable is required for Solace backend. "
+            "Get it from Solace Cloud console → Your Service → Connect tab."
+        )
+    
+    # Strip protocol if included (tcp://, tcps://, etc.)
+    # User might include protocol in SOLACE_HOST, but we handle that separately
+    if "://" in host:
+        # Extract just the hostname:port part
+        host = host.split("://", 1)[1]  # Remove protocol prefix
+    
+    # Warn if host looks like a placeholder
+    if "xxx" in host.lower():
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"⚠️  SOLACE_HOST contains 'xxx' placeholder: '{host}'. "
+            "Please replace with your actual Solace Cloud hostname."
+        )
+    
+    username = os.getenv("SOLACE_USERNAME") or os.getenv("SOLACE_USER")
+    password = os.getenv("SOLACE_PASSWORD") or os.getenv("SOLACE_PASS")
+    
+    if not username:
+        raise ValueError(
+            "SOLACE_USERNAME (or SOLACE_USER) environment variable is required. "
+            "Get it from Solace Cloud console → Your Service → Connect tab."
+        )
+    
+    if not password:
+        raise ValueError(
+            "SOLACE_PASSWORD (or SOLACE_PASS) environment variable is required. "
+            "Get it from Solace Cloud console → Your Service → Connect tab."
+        )
     
     return {
         "host": host,
         "port": int(os.getenv("SOLACE_PORT", "55555")),
-        "username": os.getenv("SOLACE_USERNAME") or os.getenv("SOLACE_USER"),
-        "password": os.getenv("SOLACE_PASSWORD") or os.getenv("SOLACE_PASS"),
+        "username": username,
+        "password": password,
         "vpn": os.getenv("SOLACE_VPN", "default"),
     }
 

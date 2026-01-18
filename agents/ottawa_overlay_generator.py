@@ -75,7 +75,7 @@ INCIDENT_SUMMARIES = [
 SEVERITY_LEVELS = {
     "low": Severity.INFO,
     "medium": Severity.WARNING,
-    "high": Severity.ERROR,
+    "high": Severity.MODERATE,
     "critical": Severity.CRITICAL,
 }
 

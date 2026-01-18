@@ -50,6 +50,19 @@ export default function TimelineEvent({ event }: TimelineEventProps) {
     return topic.split('.').pop()?.replace(/_/g, ' ').toUpperCase() || topic;
   };
 
+  // Debug: Log severity for power failure events to help diagnose issues
+  if (event.topic?.includes('power.failure')) {
+    const severity = event.payload?.severity || (event as any).severity || 'info';
+    // Log all power failure events to see what severities are actually being received
+    console.log('[TimelineEvent] Power failure event:', {
+      topic: event.topic,
+      payload_severity: event.payload?.severity,
+      event_severity: (event as any).severity,
+      final_severity: severity,
+      summary: event.payload?.summary,
+    });
+  }
+
   return (
     <div className="flex gap-4 pb-4 border-l-2 border-gray-800 pl-4 relative">
       {/* Icon */}
@@ -62,7 +75,14 @@ export default function TimelineEvent({ event }: TimelineEventProps) {
         <div className="flex items-start justify-between mb-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-white">{getTopicName(event.topic)}</span>
-            <StatusBadge severity={event.payload?.severity || 'info'} size="sm" />
+            <StatusBadge 
+              severity={
+                event.payload?.severity || 
+                (event as any).severity || 
+                'info'
+              } 
+              size="sm" 
+            />
           </div>
           <span className="text-xs text-gray-400 flex-shrink-0 ml-2">{formatTime(event.timestamp)}</span>
         </div>

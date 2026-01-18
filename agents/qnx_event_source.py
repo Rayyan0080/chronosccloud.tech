@@ -48,7 +48,7 @@ async def process_qnx_event(qnx_data: dict) -> None:
         if status == "failure" or voltage < 10:
             severity = Severity.CRITICAL
         elif voltage < 50:
-            severity = Severity.ERROR
+            severity = Severity.MODERATE
         elif voltage < 90:
             severity = Severity.WARNING
         else:

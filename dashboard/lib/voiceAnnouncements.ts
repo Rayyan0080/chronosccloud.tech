@@ -266,6 +266,19 @@ export function announceEvent(event: any): void {
     console.log('[VOICE] BLOCKED: Voice disabled (triple check)');
     return;
   }
+  
+  // ONLY announce Critical severity events
+  const payload = event.payload || {};
+  const severity = payload.severity || event.severity || '';
+  const severityLower = severity.toLowerCase();
+  
+  // Check if this is a critical severity event
+  const isCritical = severityLower === 'critical';
+  
+  if (!isCritical) {
+    console.log(`[VOICE] Skipping non-critical event: ${event.topic || 'unknown'} (severity: ${severity})`);
+    return;
+  }
 
   // Check if browser supports speech synthesis
   if (!('speechSynthesis' in window)) {
@@ -499,7 +512,7 @@ export function announceNewEvents(previousEvents: any[], currentEvents: any[], e
     }
 
     // Small delay between announcements to avoid overlap
-    const timeoutId = setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       // CRITICAL: Check state using the function that reads current module state
       // This ensures we get the CURRENT state, not the state when timeout was created
       const currentState = getCurrentState();

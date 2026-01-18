@@ -36,7 +36,7 @@ class RulesEngineFramework:
         start_time = time.time()
 
         sector_id = event.get("sector_id", "unknown")
-        severity = event.get("severity", "error")
+        severity = event.get("severity", "info")  # Default to info, not error
         details = event.get("details", {})
         voltage = details.get("voltage", 0)
         load = details.get("load", 0)
@@ -132,7 +132,7 @@ class RulesEngineFramework:
         """Assign agents based on severity."""
         if severity == "critical":
             return ["agent-001", "agent-002", "agent-003"]
-        elif severity == "error":
+        elif severity == "moderate" or severity == "error":  # 'error' kept for backward compatibility
             return ["agent-001", "agent-002"]
         else:
             return ["agent-001"]

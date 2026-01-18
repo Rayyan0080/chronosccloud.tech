@@ -499,7 +499,7 @@ class TrajectoryInsightAgent:
         # Determine severity
         severity_level = conflict.get("severity_level", "medium")
         if severity_level in ["high", "critical"]:
-            severity = Severity.ERROR.value
+            severity = Severity.MODERATE.value
         elif severity_level == "medium":
             severity = Severity.WARNING.value
         else:

@@ -19,7 +19,7 @@ All events must include the following base fields:
 
 - `info`: Informational event
 - `warning`: Warning condition
-- `error`: Error condition
+- `moderate`: Moderate severity condition (renamed from `error` for clarity)
 - `critical`: Critical condition requiring immediate attention
 
 ## Event Topics
@@ -34,7 +34,7 @@ Power failure events indicating electrical system issues.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -98,7 +98,7 @@ Recovery plan events for crisis response and restoration procedures.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -175,7 +175,7 @@ Operator status events tracking human operator availability and actions.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -245,7 +245,7 @@ Audit decision events for tracking automated and manual decisions in the system.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -319,7 +319,7 @@ Flight plan uploaded events indicating new flight plans have been received.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -392,7 +392,7 @@ Flight parsed events indicating individual flights have been extracted from flig
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -480,7 +480,7 @@ Trajectory sampled events indicating flight trajectories have been sampled for a
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -573,7 +573,7 @@ Conflict detected events indicating potential conflicts between flights have bee
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -660,7 +660,7 @@ Hotspot detected events indicating congestion or high-density areas in airspace.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -752,7 +752,7 @@ Solution proposed events indicating resolution strategies for conflicts or hotsp
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -862,7 +862,7 @@ Report ready events indicating airspace analysis reports have been generated.
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -947,7 +947,7 @@ Geospatial incident events for marking incidents on maps with geographic coordin
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -1043,7 +1043,7 @@ Geospatial risk area events for marking risk zones on maps with geographic bound
   "event_id": "string (UUID)",
   "timestamp": "string (ISO 8601)",
   "source": "string",
-  "severity": "info|warning|error|critical",
+  "severity": "info|warning|moderate|critical",
   "sector_id": "string",
   "summary": "string",
   "details": {
@@ -1129,6 +1129,490 @@ Geospatial risk area events for marking risk zones on maps with geographic bound
 }
 ```
 
+### transit.gtfsrt.fetch.started
+
+GTFS-RT feed fetch started events indicating the beginning of a real-time transit data fetch.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "feed_url": "string",
+    "feed_type": "string (optional)",
+    "fetch_id": "string (optional)",
+    "expected_entities": "number (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: Vehicle Positions Feed**
+```json
+{
+  "event_id": "cc0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:00:00Z",
+  "source": "transit-gtfsrt-fetcher",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "GTFS-RT feed fetch started",
+  "correlation_id": "dd0e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "feed_url": "https://api.octranspo.com/gtfsrt/vehicle_positions",
+    "feed_type": "vehicle_positions",
+    "fetch_id": "FETCH-ABC12345",
+    "expected_entities": 450
+  }
+}
+```
+
+**Example 2: Trip Updates Feed**
+```json
+{
+  "event_id": "cc0e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T14:05:00Z",
+  "source": "transit-gtfsrt-fetcher",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "GTFS-RT trip updates feed fetch started",
+  "correlation_id": "dd0e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "feed_url": "https://api.octranspo.com/gtfsrt/trip_updates",
+    "feed_type": "trip_updates",
+    "fetch_id": "FETCH-DEF67890",
+    "expected_entities": 320
+  }
+}
+```
+
+### transit.vehicle.position
+
+Vehicle position events indicating real-time location updates for transit vehicles.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "vehicle_id": "string",
+    "trip_id": "string (optional)",
+    "route_id": "string (optional)",
+    "latitude": "number (optional)",
+    "longitude": "number (optional)",
+    "bearing": "number (optional)",
+    "speed": "number (optional)",
+    "occupancy_status": "string (optional)",
+    "current_stop_sequence": "number (optional)",
+    "current_status": "string (optional)",
+    "timestamp": "string (ISO 8601, optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: In Transit Vehicle**
+```json
+{
+  "event_id": "ee0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:15:00Z",
+  "source": "transit-vehicle-tracker",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Vehicle VEH-ABC123 position update",
+  "correlation_id": "ff0e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "vehicle_id": "VEH-ABC123",
+    "trip_id": "TRIP-12345",
+    "route_id": "ROUTE-95",
+    "latitude": 45.4215,
+    "longitude": -75.6972,
+    "bearing": 180.0,
+    "speed": 12.5,
+    "occupancy_status": "MANY_SEATS_AVAILABLE",
+    "current_stop_sequence": 15,
+    "current_status": "IN_TRANSIT_TO",
+    "timestamp": "2024-01-15T14:15:00Z"
+  }
+}
+```
+
+**Example 2: Stopped Vehicle**
+```json
+{
+  "event_id": "ee0e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T14:20:00Z",
+  "source": "transit-vehicle-tracker",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Vehicle VEH-DEF456 position update",
+  "correlation_id": "ff0e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "vehicle_id": "VEH-DEF456",
+    "trip_id": "TRIP-67890",
+    "route_id": "ROUTE-97",
+    "latitude": 45.4115,
+    "longitude": -75.7072,
+    "bearing": 0.0,
+    "speed": 0.0,
+    "occupancy_status": "FULL",
+    "current_stop_sequence": 8,
+    "current_status": "STOPPED_AT",
+    "timestamp": "2024-01-15T14:20:00Z"
+  }
+}
+```
+
+### transit.trip.update
+
+Trip update events indicating schedule changes and delays for transit trips.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "trip_id": "string",
+    "route_id": "string (optional)",
+    "vehicle_id": "string (optional)",
+    "stop_time_updates": "array (optional)",
+    "delay": "number (optional)",
+    "timestamp": "string (ISO 8601, optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: Delayed Trip**
+```json
+{
+  "event_id": "110e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:25:00Z",
+  "source": "transit-trip-monitor",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Trip TRIP-12345 update received - 2 minute delay",
+  "correlation_id": "220e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "trip_id": "TRIP-12345",
+    "route_id": "ROUTE-95",
+    "vehicle_id": "VEH-ABC123",
+    "stop_time_updates": [
+      {
+        "stop_sequence": 15,
+        "stop_id": "STOP-12345",
+        "arrival_time": "2024-01-15T14:30:00Z",
+        "departure_time": "2024-01-15T14:32:00Z"
+      }
+    ],
+    "delay": 120,
+    "timestamp": "2024-01-15T14:25:00Z"
+  }
+}
+```
+
+**Example 2: On-Time Trip**
+```json
+{
+  "event_id": "110e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T14:30:00Z",
+  "source": "transit-trip-monitor",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Trip TRIP-67890 update received - on time",
+  "correlation_id": "220e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "trip_id": "TRIP-67890",
+    "route_id": "ROUTE-97",
+    "vehicle_id": "VEH-DEF456",
+    "stop_time_updates": [
+      {
+        "stop_sequence": 8,
+        "stop_id": "STOP-12346",
+        "arrival_time": "2024-01-15T14:35:00Z",
+        "departure_time": "2024-01-15T14:36:00Z"
+      }
+    ],
+    "delay": 0,
+    "timestamp": "2024-01-15T14:30:00Z"
+  }
+}
+```
+
+### transit.disruption.risk
+
+Disruption risk events indicating predicted or detected service disruptions.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "risk_id": "string",
+    "risk_type": "string (optional)",
+    "severity_level": "string (optional)",
+    "affected_routes": "array (optional)",
+    "affected_stops": "array (optional)",
+    "location": "object (optional)",
+    "predicted_start_time": "string (ISO 8601, optional)",
+    "predicted_end_time": "string (ISO 8601, optional)",
+    "confidence_score": "number (optional)",
+    "description": "string (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: High Risk Delay**
+```json
+{
+  "event_id": "330e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:40:00Z",
+  "source": "transit-risk-analyzer",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Disruption risk RISK-ABC123 detected - high probability of delays",
+  "correlation_id": "440e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "risk_id": "RISK-ABC123",
+    "risk_type": "delay",
+    "severity_level": "high",
+    "affected_routes": ["ROUTE-95", "ROUTE-97"],
+    "affected_stops": ["STOP-12345", "STOP-12346"],
+    "location": {
+      "latitude": 45.4215,
+      "longitude": -75.6972
+    },
+    "predicted_start_time": "2024-01-15T14:00:00Z",
+    "predicted_end_time": "2024-01-15T16:00:00Z",
+    "confidence_score": 0.75,
+    "description": "High probability of delays due to traffic congestion"
+  }
+}
+```
+
+**Example 2: Service Interruption Risk**
+```json
+{
+  "event_id": "330e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T14:45:00Z",
+  "source": "transit-risk-analyzer",
+  "severity": "critical",
+  "sector_id": "ottawa-transit",
+  "summary": "Disruption risk RISK-DEF456 detected - potential service interruption",
+  "correlation_id": "440e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "risk_id": "RISK-DEF456",
+    "risk_type": "service_interruption",
+    "severity_level": "critical",
+    "affected_routes": ["ROUTE-95"],
+    "affected_stops": ["STOP-12345"],
+    "location": {
+      "latitude": 45.4115,
+      "longitude": -75.7072
+    },
+    "predicted_start_time": "2024-01-15T15:00:00Z",
+    "predicted_end_time": "2024-01-15T17:00:00Z",
+    "confidence_score": 0.85,
+    "description": "Potential service interruption due to infrastructure issue"
+  }
+}
+```
+
+### transit.hotspot
+
+Transit hotspot events indicating congestion or high-density areas in the transit network.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "hotspot_id": "string",
+    "hotspot_type": "string (optional)",
+    "location": "object (optional)",
+    "affected_routes": "array (optional)",
+    "affected_vehicles": "array (optional)",
+    "severity": "string (optional)",
+    "start_time": "string (ISO 8601, optional)",
+    "end_time": "string (ISO 8601, optional)",
+    "vehicle_count": "number (optional)",
+    "average_delay": "number (optional)",
+    "description": "string (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: Congestion Hotspot**
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:00:00Z",
+  "source": "transit-hotspot-detector",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Transit hotspot HOTSPOT-ABC123 detected in downtown core",
+  "correlation_id": "660e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "hotspot_id": "HOTSPOT-ABC123",
+    "hotspot_type": "congestion",
+    "location": {
+      "latitude": 45.4215,
+      "longitude": -75.6972,
+      "radius_meters": 500
+    },
+    "affected_routes": ["ROUTE-95", "ROUTE-97"],
+    "affected_vehicles": ["VEH-ABC123", "VEH-DEF456", "VEH-GHI789"],
+    "severity": "high",
+    "start_time": "2024-01-15T14:00:00Z",
+    "end_time": "2024-01-15T15:30:00Z",
+    "vehicle_count": 12,
+    "average_delay": 8.5,
+    "description": "High congestion hotspot in downtown core"
+  }
+}
+```
+
+**Example 2: Delay Hotspot**
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T15:10:00Z",
+  "source": "transit-hotspot-detector",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Transit hotspot HOTSPOT-DEF456 detected - significant delays",
+  "correlation_id": "660e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "hotspot_id": "HOTSPOT-DEF456",
+    "hotspot_type": "delay",
+    "location": {
+      "latitude": 45.4115,
+      "longitude": -75.7072,
+      "radius_meters": 300
+    },
+    "affected_routes": ["ROUTE-95"],
+    "affected_vehicles": ["VEH-ABC123", "VEH-DEF456"],
+    "severity": "medium",
+    "start_time": "2024-01-15T15:00:00Z",
+    "end_time": "2024-01-15T16:00:00Z",
+    "vehicle_count": 5,
+    "average_delay": 5.2,
+    "description": "Delay hotspot affecting route 95"
+  }
+}
+```
+
+### transit.report.ready
+
+Transit report ready events indicating analysis reports have been generated.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "report_id": "string",
+    "report_type": "string (optional)",
+    "report_period_start": "string (ISO 8601, optional)",
+    "report_period_end": "string (ISO 8601, optional)",
+    "report_url": "string (optional)",
+    "report_format": "string (optional)",
+    "total_vehicles": "number (optional)",
+    "disruptions_detected": "number (optional)",
+    "hotspots_detected": "number (optional)",
+    "average_delay_minutes": "number (optional)",
+    "generated_by": "string (optional)",
+    "report_size": "number (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: Daily Summary Report**
+```json
+{
+  "event_id": "770e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T23:59:00Z",
+  "source": "transit-report-generator",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Transit report RPT-20240115-ABC123 ready for review",
+  "correlation_id": "880e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "report_id": "RPT-20240115-ABC123",
+    "report_type": "summary",
+    "report_period_start": "2024-01-15T00:00:00Z",
+    "report_period_end": "2024-01-15T23:59:59Z",
+    "report_url": "/reports/transit/RPT-20240115-ABC123.pdf",
+    "report_format": "PDF",
+    "total_vehicles": 450,
+    "disruptions_detected": 12,
+    "hotspots_detected": 5,
+    "average_delay_minutes": 3.2,
+    "generated_by": "transit-analytics-engine",
+    "report_size": 1536000
+  }
+}
+```
+
+**Example 2: Disruption Analysis Report**
+```json
+{
+  "event_id": "770e8400-e29b-41d4-a716-446655440001",
+  "timestamp": "2024-01-15T12:00:00Z",
+  "source": "transit-report-generator",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Transit disruption report RPT-DISRUPT-20240115 ready",
+  "correlation_id": "880e8400-e29b-41d4-a716-446655440001",
+  "details": {
+    "report_id": "RPT-DISRUPT-20240115",
+    "report_type": "disruption",
+    "report_period_start": "2024-01-15T08:00:00Z",
+    "report_period_end": "2024-01-15T12:00:00Z",
+    "report_url": "/reports/transit/RPT-DISRUPT-20240115.json",
+    "report_format": "JSON",
+    "total_vehicles": 342,
+    "disruptions_detected": 8,
+    "hotspots_detected": 3,
+    "average_delay_minutes": 5.8,
+    "generated_by": "transit-analytics-engine",
+    "report_size": 524288
+  }
+}
+```
+
 ## Event Validation
 
 All events should be validated against this schema before publishing. The Python schema implementation in `agents/shared/schema.py` provides validation utilities.
@@ -1149,6 +1633,12 @@ Events are published to topics matching the event type:
 - `airspace.report.ready` → `chronos.events.airspace.report.ready`
 - `geo.incident` → `chronos.events.geo.incident`
 - `geo.risk_area` → `chronos.events.geo.risk_area`
+- `transit.gtfsrt.fetch.started` → `chronos.events.transit.gtfsrt.fetch.started`
+- `transit.vehicle.position` → `chronos.events.transit.vehicle.position`
+- `transit.trip.update` → `chronos.events.transit.trip.update`
+- `transit.disruption.risk` → `chronos.events.transit.disruption.risk`
+- `transit.hotspot` → `chronos.events.transit.hotspot`
+- `transit.report.ready` → `chronos.events.transit.report.ready`
 
 ## Best Practices
 

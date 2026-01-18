@@ -198,9 +198,38 @@ export default function Compare() {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{getFrameworkIcon(details.framework_name)}</span>
-                      <h3 className="text-lg font-bold text-white">
-                        {details.framework_name}
-                      </h3>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">
+                          {details.framework_name}
+                        </h3>
+                        {/* Show model/provider information prominently */}
+                        {details.framework_name === 'RULES_ENGINE' ? (
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            Deterministic Rules Engine
+                          </div>
+                        ) : details.metadata?.llm_provider ? (
+                          <div className="text-xs text-blue-300 mt-0.5 font-medium">
+                            {details.metadata.llm_provider}
+                            {details.metadata.llm_model && details.metadata.llm_model !== 'N/A' && 
+                              ` • ${details.metadata.llm_model}`}
+                          </div>
+                        ) : details.metadata?.provider ? (
+                          <div className="text-xs text-blue-300 mt-0.5 font-medium">
+                            {details.metadata.provider === 'gemini' ? 'Gemini' : 
+                             details.metadata.provider === 'cerebras' ? 'Cerebras' : 
+                             details.metadata.provider}
+                            {details.metadata.model && ` • ${details.metadata.model}`}
+                          </div>
+                        ) : details.metadata?.llm_model && details.metadata.llm_model !== 'agent_consensus' ? (
+                          <div className="text-xs text-blue-300 mt-0.5 font-medium">
+                            {details.metadata.llm_model}
+                          </div>
+                        ) : details.framework_name === 'AGENTIC_MESH' && details.metadata?.llm_escalated === false ? (
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            Agent Consensus (No LLM)
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                     {isSelected && (
                       <span className="bg-green-600 text-white text-xs px-2 py-1 rounded">

@@ -82,39 +82,16 @@ class ElevenLabsClient:
             response = requests.post(url, json=data, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                # Save audio to temporary file and play
-                import tempfile
-                import subprocess
-                import platform
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-                    tmp_file.write(response.content)
-                    tmp_file_path = tmp_file.name
-
-                # Play audio based on platform
-                system = platform.system()
-                if system == "Windows":
-                    os.startfile(tmp_file_path)
-                elif system == "Darwin":  # macOS
-                    subprocess.run(["afplay", tmp_file_path], check=False)
-                else:  # Linux
-                    subprocess.run(["mpg123", tmp_file_path], check=False)
-
-                # Clean up after a delay
-                import threading
-                import time
-
-                def cleanup():
-                    time.sleep(5)
-                    try:
-                        os.unlink(tmp_file_path)
-                    except:
-                        pass
-
-                threading.Thread(target=cleanup, daemon=True).start()
-
-                print(f"\n[VOICE] Audio played successfully: {text[:50]}...\n")
-                logger.info(f"[VOICE] Spoke: {text[:50]}...")
+                # NOTE: Audio playback is disabled - all audio is handled by the browser
+                # via Web Speech API in the dashboard. This prevents local media players
+                # from opening. The audio file is generated but not played locally.
+                
+                # Just log that audio was generated (browser will handle playback)
+                print(f"\n[VOICE] Audio generated (browser will play): {text[:50]}...\n")
+                logger.info(f"[VOICE] Audio generated for browser playback: {text[:50]}...")
+                
+                # Optionally save to temp file for debugging (but don't play it)
+                # The browser dashboard uses Web Speech API for all audio output
             else:
                 # Provide more detailed error information
                 error_msg = f"ElevenLabs API error: {response.status_code}"

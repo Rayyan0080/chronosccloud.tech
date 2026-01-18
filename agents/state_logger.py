@@ -38,6 +38,7 @@ EVENT_TOPICS = [
     "chronos.events.agent.compare.result",
     # Airspace domain events
     "chronos.events.airspace.plan.uploaded",
+    "chronos.events.airspace.aircraft.position",
     "chronos.events.airspace.flight.parsed",
     "chronos.events.airspace.trajectory.sampled",
     "chronos.events.airspace.conflict.detected",
@@ -48,6 +49,13 @@ EVENT_TOPICS = [
     # Geospatial domain events
     "chronos.events.geo.incident",
     "chronos.events.geo.risk_area",
+    # Transit domain events
+    "chronos.events.transit.gtfsrt.fetch.started",
+    "chronos.events.transit.vehicle.position",
+    "chronos.events.transit.trip.update",
+    "chronos.events.transit.disruption.risk",
+    "chronos.events.transit.hotspot",
+    "chronos.events.transit.report.ready",
 ]
 
 # MongoDB configuration

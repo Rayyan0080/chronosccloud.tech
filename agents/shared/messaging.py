@@ -11,8 +11,21 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 from uuid import uuid4
+
+# Try to load .env file if available
+try:
+    from dotenv import load_dotenv
+    # Try to find .env file in project root
+    current_file = Path(__file__)
+    project_root = current_file.parent.parent.parent  # agents/shared/ -> agents/ -> project root
+    env_file = project_root / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+except ImportError:
+    pass  # python-dotenv not installed, skip
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +205,30 @@ class SolaceBackend(MessageBroker):
         """Connect to Solace PubSub+ with automatic reconnection."""
         async with self._connection_lock:
             try:
+                # Validate configuration before attempting connection
+                if not self.host or self.host.strip() == "" or "xxx" in self.host.lower():
+                    raise ValueError(
+                        f"Invalid SOLACE_HOST: '{self.host}'. "
+                        "Please set SOLACE_HOST to your actual Solace Cloud hostname "
+                        "(e.g., 'xxx.messaging.solace.cloud' - replace 'xxx' with your actual host)."
+                    )
+                
+                if not self.username or self.username.strip() == "":
+                    raise ValueError(
+                        "SOLACE_USERNAME is required. Please set it in your .env file."
+                    )
+                
+                if not self.password or self.password.strip() == "":
+                    raise ValueError(
+                        "SOLACE_PASSWORD is required. Please set it in your .env file."
+                    )
+                
+                # Log connection attempt (mask sensitive info)
+                logger.info(f"Attempting to connect to Solace...")
+                logger.info(f"Host: {self.host}:{self.port}")
+                logger.info(f"VPN: {self.vpn}")
+                logger.info(f"Username: {self.username}")
+                
                 # Try to import Solace libraries
                 try:
                     from solace.messaging.messaging_service import MessagingService
@@ -203,25 +240,185 @@ class SolaceBackend(MessageBroker):
 
                 # Build connection properties
                 # Solace SDK uses property-based configuration
+                # Port 55443 is for secured (TLS) connections, use tcps://
+                # Port 55555 is for unsecured connections, use tcp://
+                use_tls = self.port == 55443
+                
+                # IMPORTANT: For development, use port 55555 (unsecured) to avoid TLS trust store issues
+                # Port 55443 (secured) requires proper certificate configuration
+                if use_tls:
+                    logger.warning("=" * 60)
+                    logger.warning("⚠️  USING SECURED CONNECTION (Port 55443)")
+                    logger.warning("⚠️  This requires TLS certificate configuration.")
+                    logger.warning("⚠️  For development, consider using port 55555 (unsecured)")
+                    logger.warning("=" * 60)
+                
+                protocol = "tcps" if use_tls else "tcp"
+                
+                # Strip protocol from host if it was included
+                host_clean = self.host
+                if "://" in host_clean:
+                    host_clean = host_clean.split("://", 1)[1]
+                
+                # Remove port from host if it was included (e.g., host:port format)
+                if ":" in host_clean:
+                    host_clean = host_clean.split(":")[0]
+                
+                connection_string = f"{protocol}://{host_clean}:{self.port}"
+                logger.debug(f"Connection string: {connection_string} (TLS: {use_tls})")
+                
+                # Build connection properties
                 connection_properties = {
-                    "solace.messaging.transport.host": f"tcp://{self.host}:{self.port}",
+                    "solace.messaging.transport.host": connection_string,
                     "solace.messaging.service.vpn-name": self.vpn,
                     "solace.messaging.authentication.scheme.basic.username": self.username,
                     "solace.messaging.authentication.scheme.basic.password": self.password,
+                    "solace.messaging.transport.connect-timeout-in-millis": "60000",  # 60 seconds (increased from 30)
+                    "solace.messaging.transport.reconnect-retries": "3",
+                    "solace.messaging.transport.reconnect-retry-wait-in-millis": "1000",
                 }
 
-                # Create messaging service
-                messaging_service = MessagingService.builder().from_properties(
-                    connection_properties
-                ).build()
+                # Create messaging service builder
+                builder = MessagingService.builder().from_properties(connection_properties)
+                
+                # Add explicit authentication strategy (recommended by Solace docs)
+                try:
+                    from solace.messaging.config.authentication_strategy import BasicUserNamePassword
+                    auth_strategy = BasicUserNamePassword.of(self.username, self.password)
+                    builder = builder.with_authentication_strategy(auth_strategy)
+                    logger.debug("Explicit authentication strategy configured")
+                except ImportError:
+                    logger.warning("Could not import BasicUserNamePassword, using property-based auth")
+                except Exception as auth_error:
+                    logger.warning(f"Could not configure explicit auth strategy: {auth_error}")
+                
+                # For TLS connections, configure transport security strategy
+                if use_tls:
+                    try:
+                        from solace.messaging.config.transport_security_strategy import TLS
+                        from pathlib import Path
+                        
+                        # Check if user provided a trust store file path
+                        trust_store_path = os.getenv("SOLACE_TRUST_STORE_PATH")
+                        trust_store_configured = False
+                        
+                        if trust_store_path:
+                            # Resolve relative paths relative to project root
+                            if not os.path.isabs(trust_store_path):
+                                # Strip leading ./ or .\ from path
+                                trust_store_path_clean = trust_store_path.lstrip('./').lstrip('.\\')
+                                # Try to find project root (where .env file is)
+                                current_file = Path(__file__)
+                                project_root = current_file.parent.parent.parent  # agents/shared/ -> agents/ -> project root
+                                trust_store_path = str(project_root / trust_store_path_clean)
+                            
+                            logger.info(f"Checking trust store file: {trust_store_path}")
+                            
+                            if os.path.exists(trust_store_path):
+                                # Use provided trust store file
+                                logger.info(f"✅ Using trust store file: {trust_store_path}")
+                                try:
+                                    tls_strategy = TLS.create().with_certificate_validation(
+                                        validate_server_name=False,
+                                        ignore_expiration=True,
+                                        trust_store_file_path=trust_store_path
+                                    )
+                                    builder = builder.with_transport_security_strategy(tls_strategy)
+                                    logger.info("TLS security strategy configured with trust store")
+                                    trust_store_configured = True
+                                except Exception as tls_error:
+                                    logger.error(f"Failed to configure TLS with trust store: {tls_error}")
+                                    raise
+                            else:
+                                logger.warning(f"⚠️  Trust store file not found: {trust_store_path}")
+                                logger.warning("Falling back to alternative TLS configuration...")
+                        else:
+                            logger.info("SOLACE_TRUST_STORE_PATH not set, using alternative TLS configuration")
+                        
+                        if not trust_store_configured:
+                            # Try to disable certificate validation for development
+                            logger.warning("=" * 60)
+                            logger.warning("⚠️  TLS CONNECTION WITHOUT CERTIFICATE VALIDATION")
+                            logger.warning("⚠️  This is for development only - NOT SECURE for production!")
+                            logger.warning("=" * 60)
+                            
+                            try:
+                                # Try using the SDK method to disable validation
+                                from solace.messaging.config.certificate_validation_strategy import CertificateValidation
+                                tls_strategy = TLS.create().with_certificate_validation(
+                                    CertificateValidation.create().without_certificate_validation()
+                                )
+                                builder = builder.with_transport_security_strategy(tls_strategy)
+                                logger.info("TLS security strategy configured (validation disabled)")
+                            except (ImportError, AttributeError, Exception) as e:
+                                # Fallback: Try to configure with minimal validation
+                                logger.warning(f"Could not use without_certificate_validation(): {e}")
+                                logger.warning("Attempting alternative TLS configuration...")
+                                
+                                # Alternative: Use system trust store with relaxed validation
+                                try:
+                                    tls_strategy = TLS.create().with_certificate_validation(
+                                        validate_server_name=False,
+                                        ignore_expiration=True,
+                                        trust_store_file_path=None  # Use system default
+                                    )
+                                    builder = builder.with_transport_security_strategy(tls_strategy)
+                                    logger.info("TLS security strategy configured (system trust store)")
+                                except Exception as alt_error:
+                                    logger.error(f"Failed to configure TLS: {alt_error}")
+                                    logger.error("=" * 60)
+                                    logger.error("SOLUTION: Download Root CA certificate from Solace Cloud")
+                                    logger.error("  1. Go to Solace Cloud Console > Connect tab")
+                                    logger.error("  2. Download 'Root CA PEM' or 'Root G2 PEM'")
+                                    logger.error("  3. Save the file (e.g., as 'solace-ca.pem')")
+                                    logger.error("  4. Set environment variable: SOLACE_TRUST_STORE_PATH=/path/to/solace-ca.pem")
+                                    logger.error("=" * 60)
+                                    raise
+                    except ImportError as e:
+                        logger.error(f"TLS configuration classes not available: {e}")
+                        logger.error("Install solace-pubsubplus package: pip install solace-pubsubplus")
+                        raise
+
+                # Build messaging service
+                logger.info(f"Building messaging service with connection string: {connection_string}")
+                messaging_service = builder.build()
+                logger.info("Messaging service built successfully, attempting connection...")
 
                 # Connect (Solace SDK uses synchronous connect)
                 # Run in executor to avoid blocking
                 loop = asyncio.get_event_loop()
                 try:
+                    logger.info("Calling messaging_service.connect()...")
                     await loop.run_in_executor(None, messaging_service.connect)
+                    logger.info("Connection call completed")
                 except Exception as e:
-                    logger.error(f"Solace connection failed: {e}")
+                    error_msg = str(e)
+                    if "UNRESOLVED_HOST" in error_msg or "Could not be resolved" in error_msg:
+                        logger.error(f"Solace connection failed: Cannot resolve host '{self.host}'")
+                        logger.error("Possible issues:")
+                        logger.error("  1. SOLACE_HOST contains placeholder 'xxx' - replace with actual hostname")
+                        logger.error("  2. Hostname is incorrect - check Solace Cloud console")
+                        logger.error("  3. Network/DNS issue - verify hostname is reachable")
+                        logger.error(f"  4. Current host value: '{self.host}'")
+                    elif "TIMEOUT" in error_msg or "timeout" in error_msg.lower():
+                        logger.error(f"Solace connection failed: Connection timeout after 60 seconds")
+                        logger.error("=" * 60)
+                        logger.error("Possible issues:")
+                        logger.error(f"  1. Port {self.port} may be blocked by firewall")
+                        logger.error("  2. Network connectivity issue - test with: telnet <host> <port>")
+                        logger.error("  3. Solace Cloud service may be unreachable from your network")
+                        logger.error("  4. VPN or proxy may be blocking the connection")
+                        logger.error("=" * 60)
+                        logger.error("TROUBLESHOOTING STEPS:")
+                        logger.error(f"  1. Test network connectivity:")
+                        logger.error(f"     PowerShell: Test-NetConnection -ComputerName {self.host} -Port {self.port}")
+                        logger.error(f"     Or: telnet {self.host} {self.port}")
+                        logger.error("  2. Verify Solace Cloud service is running (check console)")
+                        logger.error("  3. Check if corporate firewall/proxy is blocking outbound connections")
+                        logger.error("  4. Try from a different network to rule out network issues")
+                        logger.error("=" * 60)
+                    else:
+                        logger.error(f"Solace connection failed: {e}")
                     raise
 
                 self.messaging_service = messaging_service
@@ -414,38 +611,38 @@ class SolaceBackend(MessageBroker):
             return False
 
 
-# Factory function to create broker instance with fallback
+# Factory function to create broker instance
 def create_broker(backend: Optional[str] = None) -> MessageBroker:
     """
     Create a message broker instance based on configuration.
-    Automatically falls back to NATS if Solace is unavailable.
+    
+    CRITICAL: Only creates the specified backend. Does NOT auto-fallback.
+    If Solace is configured but unavailable, connection will fail (as intended).
+    This ensures a SINGLE active broker at runtime.
 
     Args:
         backend: Backend type ("nats" or "solace"). If None, auto-detects from env.
 
     Returns:
-        MessageBroker instance (Solace if available, otherwise NATS)
+        MessageBroker instance (Solace or NATS based on configuration)
 
     Raises:
-        ValueError: If backend type is unknown
+        ValueError: If backend type is unknown or configuration is invalid
     """
     from .config import get_broker_backend
 
     backend = backend or get_broker_backend()
+    
+    # Log which backend is being used (CRITICAL for debugging)
+    logger.info("=" * 60)
+    logger.info(f"Using broker backend: {backend.upper()}")
+    logger.info("=" * 60)
 
     if backend == "solace":
-        try:
-            # Try to create Solace backend
-            solace_backend = SolaceBackend()
-            # Test if Solace config is available
-            from .config import get_solace_config
-            get_solace_config()  # Will raise ValueError if config incomplete
-            return solace_backend
-        except (ImportError, ValueError) as e:
-            logger.warning(
-                f"Solace backend unavailable ({e}), falling back to NATS"
-            )
-            return NATSBackend()
+        # Create Solace backend - will fail if config is incomplete (as intended)
+        from .config import get_solace_config
+        get_solace_config()  # Will raise ValueError if config incomplete
+        return SolaceBackend()
     elif backend == "nats":
         return NATSBackend()
     else:
@@ -460,25 +657,29 @@ _broker_instance: Optional[MessageBroker] = None
 
 async def get_broker() -> MessageBroker:
     """
-    Get or create the global broker instance with automatic fallback.
+    Get or create the global broker instance.
+    
+    CRITICAL: Does NOT auto-fallback. If configured backend fails, connection fails.
+    This ensures a SINGLE active broker at runtime and prevents accidental dual connections.
 
     Returns:
         MessageBroker instance (singleton)
+        
+    Raises:
+        ConnectionError: If broker connection fails (no auto-fallback)
     """
     global _broker_instance
     if _broker_instance is None:
         _broker_instance = create_broker()
         try:
             await _broker_instance.connect()
+            # Log successful connection
+            backend_type = "Solace" if isinstance(_broker_instance, SolaceBackend) else "NATS"
+            logger.info(f"Successfully connected to {backend_type} broker")
         except Exception as e:
             logger.error(f"Failed to connect to broker: {e}")
-            # If Solace fails, try NATS fallback
-            if isinstance(_broker_instance, SolaceBackend):
-                logger.info("Falling back to NATS backend")
-                _broker_instance = NATSBackend()
-                await _broker_instance.connect()
-            else:
-                raise
+            logger.error("Broker connection failed. Check configuration and ensure broker is running.")
+            raise ConnectionError(f"Failed to connect to broker: {e}") from e
     return _broker_instance
 
 

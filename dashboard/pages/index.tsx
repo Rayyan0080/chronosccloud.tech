@@ -68,9 +68,18 @@ export default function Home() {
         }
         // If React is true but global is false, don't change global (user just turned off)
         
-        // Only announce if voice is enabled AND we have previous events to compare
-        if (voiceEnabled && currentGlobalState && previousEventsRef.current.length > 0) {
-          announceNewEvents(previousEventsRef.current, newEvents, voiceEnabled);
+        // Announce new events - compare with previous to find truly new ones
+        if (voiceEnabled && currentGlobalState) {
+          if (previousEventsRef.current.length > 0) {
+            // Compare to find new events
+            announceNewEvents(previousEventsRef.current, newEvents, voiceEnabled);
+          } else {
+            // First load - announce all events (but only if we have events)
+            if (newEvents.length > 0) {
+              // Announce all events on first load
+              announceNewEvents([], newEvents, voiceEnabled);
+            }
+          }
         } else if (!voiceEnabled || !currentGlobalState) {
           // If voice is disabled, make sure nothing is queued
           console.log('[VOICE] Voice disabled (React:', voiceEnabled, 'Global:', currentGlobalState, '), skipping announcement check');
@@ -85,7 +94,7 @@ export default function Home() {
           (e: Event) => e.topic === 'chronos.events.operator.status'
         );
         if (operatorStatusEvents.length > 0) {
-          const sorted = operatorStatusEvents.sort((a, b) => 
+          const sorted = operatorStatusEvents.sort((a: any, b: any) => 
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
           );
           const latest = sorted[0];
@@ -131,15 +140,60 @@ export default function Home() {
         });
         setSectors(sectorStatuses);
 
-        // Calculate airspace congestion (mock for now - can be enhanced with real data)
-        const congestionEvents = data.events.filter(
-          (e: Event) => e.topic.includes('airspace') || e.topic.includes('congestion')
+        // Calculate airspace congestion from aircraft position events and hotspot events
+        const aircraftEvents = data.events.filter(
+          (e: Event) => e.topic === 'chronos.events.airspace.aircraft.position' || 
+                       e.topic === 'chronos.events.airspace.hotspot.detected' ||
+                       e.topic === 'chronos.events.geo.risk_area'
         );
-        // Mock congestion based on recent events
-        const recentEvents = data.events.filter(
-          (e: Event) => new Date(e.timestamp).getTime() > Date.now() - 5 * 60 * 1000
+        
+        // Count unique aircraft in last 5 minutes
+        const recentAircraftEvents = aircraftEvents.filter(
+          (e: Event) => {
+            const eventTime = new Date(e.timestamp).getTime();
+            return eventTime > Date.now() - 5 * 60 * 1000;
+          }
         );
-        const congestion = Math.min(100, (recentEvents.length / 10) * 100);
+        
+        // Count unique aircraft by icao24 (from aircraft.position events)
+        const aircraftPositionEvents = recentAircraftEvents.filter(
+          (e: Event) => e.topic === 'chronos.events.airspace.aircraft.position'
+        );
+        const uniqueAircraft = new Set(
+          aircraftPositionEvents.map((e: Event) => {
+            // Try multiple paths for icao24
+            return e.payload?.details?.icao24 || 
+                   e.payload?.icao24 || 
+                   e.payload?.details?.location?.icao24;
+          }).filter(Boolean)
+        );
+        
+        // Also check for congestion hotspots
+        const hotspotEvents = recentAircraftEvents.filter(
+          (e: Event) => e.topic === 'chronos.events.airspace.hotspot.detected' ||
+                       (e.topic === 'chronos.events.geo.risk_area' && 
+                        e.payload?.details?.risk_type === 'airspace_congestion')
+        );
+        
+        // Calculate congestion: base on aircraft count, boost if hotspots detected
+        const aircraftCount = uniqueAircraft.size;
+        const hotspotCount = hotspotEvents.length;
+        let congestion = Math.min(100, (aircraftCount / 15) * 100);
+        
+        // If hotspots detected, increase congestion
+        if (hotspotCount > 0) {
+          congestion = Math.min(100, congestion + (hotspotCount * 20));
+        }
+        
+        // Also check payload details for aircraft_count if available
+        hotspotEvents.forEach((e: Event) => {
+          const aircraftCountInHotspot = e.payload?.details?.aircraft_count || 
+                                        e.payload?.details?.aircraftCount;
+          if (aircraftCountInHotspot) {
+            congestion = Math.min(100, Math.max(congestion, (aircraftCountInHotspot / 15) * 100));
+          }
+        });
+        
         setAirspaceCongestion(congestion);
 
         // Find latest recovery plan
@@ -147,7 +201,7 @@ export default function Home() {
           (e: Event) => e.topic === 'chronos.events.recovery.plan'
         );
         if (recoveryPlans.length > 0) {
-          const sorted = recoveryPlans.sort((a, b) => 
+          const sorted = recoveryPlans.sort((a: any, b: any) => 
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
           );
           setLatestPlan(sorted[0].payload?.details || null);

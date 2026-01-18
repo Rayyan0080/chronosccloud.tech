@@ -120,17 +120,15 @@ Voice announcements are automatically integrated into:
 
 ## Audio Playback
 
-The system automatically plays audio based on your platform:
+**All audio is handled by the browser dashboard using Web Speech API.**
 
-- **Windows**: Uses `os.startfile()`
-- **macOS**: Uses `afplay` command
-- **Linux**: Uses `mpg123` (must be installed)
+The ElevenLabs client generates audio files but does not play them locally. Instead:
+- The dashboard receives events via the API
+- The browser uses Web Speech API to announce events
+- No local media players will open
+- Audio only plays in the browser window
 
-For Linux, install mpg123:
-```bash
-sudo apt-get install mpg123  # Debian/Ubuntu
-sudo yum install mpg123       # RHEL/CentOS
-```
+This ensures a consistent experience and prevents system media players from interfering.
 
 ## Troubleshooting
 
@@ -151,9 +149,9 @@ sudo yum install mpg123       # RHEL/CentOS
 
 ### Audio Playback Issues
 
-1. **Linux**: Ensure `mpg123` is installed
-2. **macOS**: `afplay` should be available by default
-3. **Windows**: Should work automatically
+1. **Browser Support**: Ensure your browser supports Web Speech API (Chrome, Edge, Safari, Firefox)
+2. **Dashboard**: Audio only plays in the dashboard - check that the voice toggle is enabled
+3. **Permissions**: Some browsers may require user interaction before allowing speech synthesis
 
 ### API Errors
 

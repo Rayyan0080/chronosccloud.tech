@@ -24,7 +24,7 @@ export default function EventCard({ event }: EventCardProps) {
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs text-dark-muted font-mono">{getTopicName(event.topic)}</span>
-          <StatusBadge severity={event.payload?.severity || 'info'} size="sm" />
+          <StatusBadge severity={event.payload?.severity || (event as any).severity || 'info'} size="sm" />
         </div>
         <span className="text-xs text-dark-muted">{formatTime(event.timestamp)}</span>
       </div>

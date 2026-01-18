@@ -33,14 +33,14 @@ class SingleLLMFramework:
         start_time = time.time()
 
         try:
-            # Import Gemini client
+            # Import LLM client
             import sys
             import os
 
             sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
             from ai.llm_client import get_recovery_plan
 
-            # Generate plan using Gemini (synchronous function)
+            # Generate plan using LLM (synchronous function)
             # Run in executor to avoid blocking
             loop = asyncio.get_event_loop()
             plan_details = await loop.run_in_executor(None, get_recovery_plan, event)
@@ -51,6 +51,21 @@ class SingleLLMFramework:
             steps = plan_details.get("steps", [])
             priority_violations = []  # Single LLM doesn't track violations
 
+            # Get actual provider and model from plan
+            llm_provider = plan_details.get("_llm_provider") or plan_details.get("provider") or "rules"
+            llm_model = plan_details.get("_llm_model") or plan_details.get("model") or "fallback"
+            
+            # Determine provider name
+            if llm_provider == "cerebras":
+                provider_name = "Cerebras"
+                model_name = llm_model or "openai/zai-glm-4.7"
+            elif llm_provider == "gemini":
+                provider_name = "Gemini"
+                model_name = llm_model or "gemini-pro"
+            else:
+                provider_name = "Rules (Fallback)"
+                model_name = "N/A"
+
             return {
                 "framework_name": self.framework_name,
                 "plan_output": plan_details,
@@ -59,7 +74,10 @@ class SingleLLMFramework:
                 "priority_violations": priority_violations,
                 "confidence_score": self.confidence_score,
                 "metadata": {
-                    "llm_model": "gemini-pro",
+                    "llm_provider": provider_name,
+                    "llm_model": model_name,
+                    "provider": llm_provider,
+                    "model": llm_model,
                     "single_shot": True,
                     "fallback_used": plan_details.get("_fallback", False),
                 },
@@ -75,7 +93,7 @@ class SingleLLMFramework:
         from datetime import datetime, timedelta
 
         sector_id = event.get("sector_id", "unknown")
-        severity = event.get("severity", "error")
+        severity = event.get("severity", "info")  # Default to info, not error
 
         plan_output = {
             "plan_id": f"RP-LLM-FALLBACK-{datetime.utcnow().year}",

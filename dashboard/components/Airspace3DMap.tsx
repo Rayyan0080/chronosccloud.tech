@@ -158,8 +158,6 @@ export default function Airspace3DMap({ trajectories, conflicts, hotspots }: Air
       const geometry = new THREE.SphereGeometry(0.5, 16, 16);
       const material = new THREE.MeshBasicMaterial({
         color: conflict.severity_level === 'high' ? 0xff0000 : 0xff6600,
-        emissive: conflict.severity_level === 'high' ? 0xff0000 : 0xff6600,
-        emissiveIntensity: 0.5,
       });
       const sphere = new THREE.Mesh(geometry, material);
       sphere.position.copy(pos);
@@ -176,7 +174,7 @@ export default function Airspace3DMap({ trajectories, conflicts, hotspots }: Air
     // Create hotspot spheres
     hotspots.forEach((hotspot) => {
       const loc = hotspot.location;
-      const pos = latLonTo3D(loc.latitude, loc.longitude, loc.altitude || 30000);
+      const pos = latLonTo3D(loc.latitude, loc.longitude, 30000);
 
       // Semi-transparent sphere for hotspot
       const radius = (loc.radius_nm || 25) * 0.1; // Scale radius

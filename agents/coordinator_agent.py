@@ -186,7 +186,7 @@ class CoordinatorAgent:
         """Check if sector is an airport region."""
         sector_lower = sector_id.lower()
         return any(keyword in sector_lower for keyword in AIRPORT_SECTORS)
-
+    
     def _should_trigger_recovery_plan(self, event: Dict[str, Any], event_type: str) -> bool:
         """
         Determine if recovery plan should be triggered.
@@ -201,7 +201,7 @@ class CoordinatorAgent:
 
         if event_type == "airspace_conflict":
             # High severity conflict
-            if severity in ["warning", "critical", "error"]:
+            if severity in ["warning", "critical", "moderate", "error"]:  # 'error' kept for backward compatibility
                 conflict_details = event.get("details", {})
                 severity_level = conflict_details.get("severity_level", "").lower()
                 if severity_level in ["high", "critical"]:
@@ -500,7 +500,7 @@ class CoordinatorAgent:
         except Exception as e:
             logger.error(f"Error handling airspace hotspot: {e}", exc_info=True)
             capture_exception(e, {"service": "coordinator_agent", "event_type": "airspace_hotspot"})
-
+    
     async def _generate_airspace_solutions(
         self,
         conflicts: List[Dict[str, Any]],

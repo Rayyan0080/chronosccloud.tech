@@ -199,7 +199,8 @@ class AutonomyRouter:
             await publish(SYSTEM_ACTION_TOPIC, system_action_event)
             logger.info(f"Published to: {SYSTEM_ACTION_TOPIC}")
             
-            # Voice announcement (optional)
+            # Voice announcement (optional) - Only for Critical events
+            # Autonomy takeover is a critical action, so we announce it
             if VOICE_ENABLED and speak_autonomy_takeover:
                 try:
                     speak_autonomy_takeover(plan_name, sector_id)

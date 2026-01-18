@@ -38,7 +38,7 @@ class AgenticMeshFramework:
         start_time = time.time()
 
         sector_id = event.get("sector_id", "unknown")
-        severity = event.get("severity", "error")
+        severity = event.get("severity", "info")  # Default to info, not error
         details = event.get("details", {})
         voltage = details.get("voltage", 0)
 
@@ -53,10 +53,15 @@ class AgenticMeshFramework:
         coordination = await self._agent_coordinate(sector_id)
 
         # If complex, escalate to LLM
+        llm_provider = None
+        llm_model = None
         if severity == "critical" or voltage < 10:
             llm_plan = await self._escalate_to_llm(event, assessment, resources)
             steps = llm_plan.get("steps", [])
             reasoning = llm_plan.get("reasoning", "Multi-agent + LLM coordination")
+            # Get LLM provider info from plan
+            llm_provider = llm_plan.get("_llm_provider")
+            llm_model = llm_plan.get("_llm_model")
         else:
             # Use agent consensus
             steps = self._agent_consensus(assessment, resources, coordination)
@@ -98,6 +103,8 @@ class AgenticMeshFramework:
                 "agents_involved": 3,
                 "llm_escalated": severity == "critical" or voltage < 10,
                 "consensus_reached": True,
+                "llm_provider": llm_provider or "none",
+                "llm_model": llm_model or "agent_consensus",
             },
         }
 
@@ -107,7 +114,7 @@ class AgenticMeshFramework:
         return {
             "agent_id": "agent-001",
             "assessment": "Situation analyzed",
-            "risk_level": event.get("severity", "error"),
+            "risk_level": event.get("severity", "info"),  # Default to info, not error
         }
 
     async def _agent_check_resources(self, sector_id: str) -> Dict[str, Any]:
@@ -147,9 +154,14 @@ class AgenticMeshFramework:
             }
 
             plan = get_recovery_plan(enhanced_event)
+            # Extract provider info from plan if available
+            llm_provider = plan.get("_llm_provider") or plan.get("provider") or "unknown"
+            llm_model = plan.get("_llm_model") or plan.get("model") or "unknown"
             return {
                 "steps": plan.get("steps", []),
                 "reasoning": f"LLM escalation based on agent assessment: {assessment}",
+                "_llm_provider": llm_provider,
+                "_llm_model": llm_model,
             }
         except Exception as e:
             logger.warning(f"LLM escalation failed: {e}, using agent consensus")
@@ -172,7 +184,7 @@ class AgenticMeshFramework:
     ) -> List[str]:
         """Check for priority violations in the plan."""
         violations = []
-        severity = event.get("severity", "error")
+        severity = event.get("severity", "info")  # Default to info, not error
 
         # Check if critical events have immediate action
         if severity == "critical":

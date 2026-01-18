@@ -68,6 +68,9 @@ class SolanaAuditLogger:
     async def _log_to_solana(self, hash_hex: str, payload: Dict[str, Any]) -> None:
         """
         Log hash to Solana blockchain using Memo program.
+        
+        SAFETY: Wrapped in timeout and try/catch. Never blocks main execution.
+        If Solana fails, falls back to local logging.
 
         Args:
             hash_hex: SHA-256 hash of the decision payload
@@ -99,53 +102,51 @@ class SolanaAuditLogger:
                 await self._log_to_solana(hash_hex, payload)  # Retry in demo mode
                 return
 
-            # Create Solana client
-            client = Client(self.solana_rpc_url)
+            # Wrap Solana operations in timeout to prevent blocking (10 seconds max)
+            async def _execute_solana_log():
+                # Create Solana client
+                client = Client(self.solana_rpc_url)
 
-            # Parse private key
-            try:
-                # Private key can be base58 string or hex
-                if len(self.solana_private_key) == 64:  # Hex format
-                    private_key_bytes = bytes.fromhex(self.solana_private_key)
-                else:  # Base58 format
-                    private_key_bytes = b58decode(self.solana_private_key)
+                # Parse private key
+                try:
+                    # Private key can be base58 string or hex
+                    if len(self.solana_private_key) == 64:  # Hex format
+                        private_key_bytes = bytes.fromhex(self.solana_private_key)
+                    else:  # Base58 format
+                        private_key_bytes = b58decode(self.solana_private_key)
 
-                # Create keypair
-                keypair = Keypair.from_secret_key(private_key_bytes)
-            except Exception as e:
-                logger.error(f"Failed to parse private key: {e}")
-                logger.info("Falling back to demo mode")
-                self.solana_enabled = False
-                await self._log_to_solana(hash_hex, payload)  # Retry in demo mode
-                return
+                    # Create keypair
+                    keypair = Keypair.from_secret_key(private_key_bytes)
+                except Exception as e:
+                    logger.error(f"Failed to parse private key: {e}")
+                    raise
 
-            # Create memo instruction
-            # Memo program: MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr
-            memo_text = f"CHRONOS_AUDIT:{hash_hex}"
-            memo_instruction = MemoParams(memo=memo_text.encode("utf-8"))
+                # Create memo instruction
+                # Memo program: MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr
+                memo_text = f"CHRONOS_AUDIT:{hash_hex}"
+                memo_instruction = MemoParams(memo=memo_text.encode("utf-8"))
 
-            # Build transaction
-            transaction = Transaction()
-            transaction.add(memo_instruction)
+                # Build transaction
+                transaction = Transaction()
+                transaction.add(memo_instruction)
 
-            # Get recent blockhash
-            try:
-                blockhash_resp = client.get_latest_blockhash()
-                if hasattr(blockhash_resp, "value"):
-                    blockhash = blockhash_resp.value.blockhash
-                else:
-                    blockhash = blockhash_resp.blockhash
+                # Get recent blockhash
+                try:
+                    blockhash_resp = client.get_latest_blockhash()
+                    if hasattr(blockhash_resp, "value"):
+                        blockhash = blockhash_resp.value.blockhash
+                    else:
+                        blockhash = blockhash_resp.blockhash
 
-                transaction.recent_blockhash = blockhash
-            except Exception as e:
-                logger.error(f"Failed to get recent blockhash: {e}")
-                raise
+                    transaction.recent_blockhash = blockhash
+                except Exception as e:
+                    logger.error(f"Failed to get recent blockhash: {e}")
+                    raise
 
-            # Sign transaction
-            transaction.sign(keypair)
+                # Sign transaction
+                transaction.sign(keypair)
 
-            # Send transaction
-            try:
+                # Send transaction
                 response = client.send_transaction(transaction, keypair)
                 signature = response.value
 
@@ -156,10 +157,17 @@ class SolanaAuditLogger:
                 logger.info(f"[SOLANA] Decision ID: {payload.get('details', {}).get('decision_id', 'unknown')}")
                 logger.info("=" * 60)
 
+            # Execute with timeout (10 seconds max) - never blocks main execution
+            try:
+                await asyncio.wait_for(_execute_solana_log(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.error("Solana transaction timed out after 10 seconds")
+                logger.warning("Falling back to demo mode due to timeout")
+                self.solana_enabled = False
+                await self._log_to_solana(hash_hex, payload)  # Retry in demo mode
             except Exception as e:
-                logger.error(f"Failed to send transaction to Solana: {e}")
-                # Don't raise - allow service to continue
-                logger.warning("Continuing in demo mode after transaction failure")
+                logger.error(f"Error in Solana log execution: {e}")
+                logger.warning("Falling back to demo mode")
                 self.solana_enabled = False
                 await self._log_to_solana(hash_hex, payload)  # Retry in demo mode
 

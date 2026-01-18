@@ -58,11 +58,11 @@ def generate_power_failure_event(sector_id: str, is_manual: bool = False) -> dic
     Returns:
         Dictionary containing the power failure event
     """
-    # Random severity (weighted towards warning/error for variety)
+    # Random severity - balanced distribution for better variety
     severity_weights = {
-        Severity.WARNING: 0.3,
-        Severity.ERROR: 0.4,
-        Severity.CRITICAL: 0.3,
+        Severity.WARNING: 0.35,   # 35% warning
+        Severity.MODERATE: 0.30,   # 30% moderate (renamed from ERROR)
+        Severity.CRITICAL: 0.35,  # 35% critical
     }
     severity = random.choices(
         list(severity_weights.keys()), weights=list(severity_weights.values())
@@ -96,7 +96,8 @@ def generate_power_failure_event(sector_id: str, is_manual: bool = False) -> dic
     event = {
         "event_id": str(uuid4()),
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "severity": severity.value,
+        "source": "crisis-generator",  # Required by schema
+        "severity": severity.value,  # This should be "warning", "moderate", or "critical"
         "sector_id": sector_id,
         "summary": summary,
         "details": {
@@ -108,6 +109,9 @@ def generate_power_failure_event(sector_id: str, is_manual: bool = False) -> dic
             "estimated_restore_time": estimated_restore_time,
         },
     }
+    
+    # Debug: Log the actual severity being set
+    logger.debug(f"Generated power failure event with severity: {severity.value} (enum: {severity})")
 
     return event
 
@@ -129,7 +133,10 @@ async def publish_power_failure(sector_id: str, is_manual: bool = False) -> None
         logger.info("=" * 60)
         logger.info(f"Event ID: {event['event_id']}")
         logger.info(f"Timestamp: {event['timestamp']}")
-        logger.info(f"Severity: {event['severity']}")
+        logger.info(f"Severity: {event['severity']} (should be one of: warning, moderate, critical)")
+        # Verify severity is correct
+        if event['severity'] not in ['warning', 'moderate', 'critical', 'info']:
+            logger.warning(f"⚠️  Unexpected severity value: {event['severity']}")
         logger.info(f"Sector: {event['sector_id']}")
         logger.info(f"Summary: {event['summary']}")
         logger.info("Details:")
@@ -147,16 +154,20 @@ async def publish_power_failure(sector_id: str, is_manual: bool = False) -> None
         await publish(POWER_FAILURE_TOPIC, event)
         logger.info(f"Published to topic: {POWER_FAILURE_TOPIC}")
         
-        # Voice announcement (optional)
+        # Voice announcement (optional) - ONLY for Critical events
         if VOICE_ENABLED and speak_power_failure:
-            try:
-                sector_id = event.get("sector_id", "unknown")
-                severity = event.get("severity", "info")
-                voltage = event.get("details", {}).get("voltage", 0)
-                load = event.get("details", {}).get("load", 0)
-                speak_power_failure(sector_id, severity, voltage, load)
-            except Exception as e:
-                logger.warning(f"Voice announcement failed: {e}")
+            severity = event.get("severity", "info")
+            # Only announce Critical events
+            if severity == Severity.CRITICAL.value or severity == "critical":
+                try:
+                    sector_id = event.get("sector_id", "unknown")
+                    voltage = event.get("details", {}).get("voltage", 0)
+                    load = event.get("details", {}).get("load", 0)
+                    speak_power_failure(sector_id, severity, voltage, load)
+                except Exception as e:
+                    logger.warning(f"Voice announcement failed: {e}")
+            else:
+                logger.debug(f"Skipping voice announcement for non-critical severity: {severity}")
         
         # Capture to Sentry
         capture_published_event(

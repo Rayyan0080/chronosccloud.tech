@@ -22,7 +22,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger = logging.getLogger(__name__)
 
 # Import prompt template
-from ai.prompts import RECOVERY_PLAN_PROMPT
+from ai.prompts import RECOVERY_PLAN_PROMPT, FIX_PROPOSAL_PROMPT
+
+# Import schema for fix validation
+from agents.shared.schema import (
+    FixDetails, FixAction, ActionType, RiskLevel, FixSource, 
+    ExpectedImpact, ActionVerification, ActionTarget, Severity
+)
+from agents.shared.constants import FIX_PROPOSED_TOPIC, FIX_REVIEW_REQUIRED_TOPIC
+from agents.shared.messaging import publish
 
 
 class PlannerProvider(str, Enum):
@@ -375,3 +383,331 @@ def _get_recovery_plan_gemini(event: Dict[str, Any], api_key: str) -> Dict[str, 
     plan_data["model"] = "gemini-pro"
     return plan_data
 
+
+def _generate_fallback_fix(event: Dict[str, Any], correlation_id: str) -> Dict[str, Any]:
+    """
+    Generate a fallback fix proposal when LLM API is unavailable.
+
+    Args:
+        event: Event dictionary (incident, hotspot, or plan)
+        correlation_id: Correlation ID linking to the original event
+
+    Returns:
+        Fix proposal dictionary
+    """
+    from datetime import timezone
+    
+    # Generate fix ID
+    fix_id = f"FIX-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+    
+    # Determine fix type based on event
+    event_type = event.get("source", "unknown")
+    sector_id = event.get("sector_id", "unknown")
+    
+    # Create a simple rules-based fix
+    if "transit" in event_type.lower() or "hotspot" in str(event.get("details", {})).lower():
+        # Transit fix
+        title = f"Reroute to reduce delays in {sector_id}"
+        summary = "Proposed reroute to bypass congestion area"
+        action_type = ActionType.TRANSIT_REROUTE_SIM
+        target = ActionTarget(route_id="ROUTE-95")
+        risk_level = RiskLevel.MED
+        delay_reduction = 10.0
+    elif "airspace" in event_type.lower() or "conflict" in str(event.get("details", {})).lower():
+        # Airspace fix
+        title = f"Altitude adjustment for conflict mitigation in {sector_id}"
+        summary = "Proposed altitude change to resolve conflict"
+        action_type = ActionType.AIRSPACE_MITIGATION_SIM
+        target = ActionTarget(sector_id=sector_id)
+        risk_level = RiskLevel.LOW
+        delay_reduction = 0.0
+    elif "power" in event_type.lower():
+        # Power fix
+        title = f"Power recovery plan for {sector_id}"
+        summary = "Proposed power restoration steps"
+        action_type = ActionType.POWER_RECOVERY_SIM
+        target = ActionTarget(sector_id=sector_id)
+        risk_level = RiskLevel.MED
+        delay_reduction = 0.0
+    else:
+        # Generic fix
+        title = f"Mitigation plan for {sector_id}"
+        summary = "Proposed mitigation actions"
+        action_type = ActionType.TRAFFIC_ADVISORY_SIM
+        target = ActionTarget(sector_id=sector_id)
+        risk_level = RiskLevel.LOW
+        delay_reduction = 5.0
+    
+    return {
+        "fix_id": fix_id,
+        "correlation_id": correlation_id,
+        "source": FixSource.RULES.value,
+        "title": title,
+        "summary": summary,
+        "actions": [
+            {
+                "type": action_type.value,
+                "target": target.dict(exclude_none=True),
+                "params": {},
+                "verification": {
+                    "metric_name": "delay_reduction",
+                    "threshold": 5.0,
+                    "window_seconds": 300
+                }
+            }
+        ],
+        "risk_level": risk_level.value,
+        "expected_impact": {
+            "delay_reduction": delay_reduction,
+            "risk_score_delta": -0.1
+        },
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "proposed_by": "agent-fix-generator",
+        "requires_human_approval": True
+    }
+
+
+def _validate_fix_proposal(fix_data: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """
+    Validate fix proposal against FixDetails pydantic model.
+    
+    Args:
+        fix_data: Fix proposal dictionary to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check required fields first
+    required_fields = ["title", "summary", "actions", "risk_level", "expected_impact"]
+    missing_fields = [field for field in required_fields if field not in fix_data]
+    if missing_fields:
+        return False, f"Missing required fields: {missing_fields}"
+    
+    # Validate actions array
+    if not isinstance(fix_data.get("actions"), list) or len(fix_data["actions"]) == 0:
+        return False, "actions must be a non-empty array"
+    
+    # Validate each action has verification
+    for i, action in enumerate(fix_data["actions"]):
+        if not isinstance(action, dict):
+            return False, f"action[{i}] must be an object"
+        if "type" not in action:
+            return False, f"action[{i}] missing 'type' field"
+        if "target" not in action:
+            return False, f"action[{i}] missing 'target' field"
+        if "verification" not in action:
+            return False, f"action[{i}] missing 'verification' field"
+        # Validate verification structure
+        verification = action.get("verification", {})
+        if not isinstance(verification, dict):
+            return False, f"action[{i}].verification must be an object"
+        if "metric_name" not in verification or "threshold" not in verification or "window_seconds" not in verification:
+            return False, f"action[{i}].verification missing required fields (metric_name, threshold, window_seconds)"
+    
+    # Remove top-level verification if present (not in schema, but prompt may include it)
+    fix_data_clean = fix_data.copy()
+    if "verification" in fix_data_clean and isinstance(fix_data_clean["verification"], dict):
+        # Top-level verification is optional, remove it for schema validation
+        del fix_data_clean["verification"]
+    
+    try:
+        # Validate using pydantic model (without top-level verification)
+        fix_details = FixDetails(**fix_data_clean)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+async def get_fix_proposal(event: Dict[str, Any], correlation_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Generate fix proposal using Gemini API with strict JSON output and validation.
+    
+    SAFETY: This function NEVER crashes. Always falls back to rules-based fix
+    if Gemini API fails, timeout, or returns invalid JSON.
+    
+    On success, publishes:
+    - fix.proposed event
+    - fix.review_required event
+    
+    Args:
+        event: Event dictionary (incident, hotspot, or plan)
+        correlation_id: Correlation ID linking to the original event
+        
+    Returns:
+        Fix proposal dictionary if successful, None if fallback used
+    """
+    from datetime import timezone
+    
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        logger.info("GEMINI_API_KEY not set, using rules-based fallback fix")
+        return None
+    
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        logger.warning("google-generativeai library not installed, using rules-based fallback fix")
+        return None
+    
+    try:
+        # Configure Gemini
+        genai.configure(api_key=gemini_api_key)
+        
+        # Prepare prompt
+        event_json = json.dumps(event, indent=2)
+        prompt = FIX_PROPOSAL_PROMPT.format(event_json=event_json)
+        
+        logger.info("Calling Gemini API to generate fix proposal...")
+        
+        # Call Gemini API with strict JSON output
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.3,  # Lower temperature for more consistent JSON
+                "max_output_tokens": 2000,
+            },
+        )
+        
+        # Extract text from response
+        response_text = response.text if hasattr(response, "text") else str(response)
+        logger.debug(f"Gemini response: {response_text[:500]}...")
+        
+        # Parse JSON from response (STRICT parsing)
+        fix_data = _extract_json_from_text(response_text)
+        
+        if not fix_data:
+            logger.warning("Failed to parse JSON from Gemini response, using rules-based fallback")
+            return None
+        
+        # Validate against pydantic FixDetails model
+        is_valid, error_msg = _validate_fix_proposal(fix_data)
+        if not is_valid:
+            logger.warning(f"Gemini fix proposal validation failed: {error_msg}, using rules-based fallback")
+            return None
+        
+        # Add required fields for FixDetails
+        fix_id = f"FIX-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        fix_data["fix_id"] = fix_id
+        fix_data["correlation_id"] = correlation_id
+        fix_data["source"] = FixSource.GEMINI.value
+        fix_data["created_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        fix_data["proposed_by"] = "agent-fix-generator"
+        if "requires_human_approval" not in fix_data:
+            fix_data["requires_human_approval"] = True
+        
+        # Ensure each action has verification (required by prompt)
+        for action in fix_data.get("actions", []):
+            if "verification" not in action:
+                logger.warning("Action missing verification field, using rules-based fallback")
+                return None
+        
+        # Re-validate with all fields (verification at top level is optional, will be removed in validation)
+        is_valid, error_msg = _validate_fix_proposal(fix_data)
+        if not is_valid:
+            logger.warning(f"Fix proposal validation failed after adding fields: {error_msg}, using rules-based fallback")
+            return None
+        
+        logger.info(f"Fix proposal generated successfully using Gemini: {fix_id}")
+        
+        # Create fix.proposed event
+        fix_proposed_event = {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "source": "fix-coordinator",
+            "severity": Severity.WARNING.value,
+            "sector_id": event.get("sector_id", "unknown"),
+            "summary": f"Fix {fix_id} proposed: {fix_data.get('title', 'Untitled')}",
+            "correlation_id": correlation_id,
+            "details": fix_data
+        }
+        
+        # Publish fix.proposed event
+        await publish(FIX_PROPOSED_TOPIC, fix_proposed_event)
+        logger.info(f"Published fix.proposed event: {fix_id}")
+        
+        # Create fix.review_required event
+        fix_review_event = {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "source": "fix-reviewer",
+            "severity": Severity.WARNING.value,
+            "sector_id": event.get("sector_id", "unknown"),
+            "summary": f"Fix {fix_id} requires human review",
+            "correlation_id": correlation_id,
+            "details": fix_data
+        }
+        
+        # Publish fix.review_required event
+        await publish(FIX_REVIEW_REQUIRED_TOPIC, fix_review_event)
+        logger.info(f"Published fix.review_required event: {fix_id}")
+        
+        return fix_data
+        
+    except Exception as e:
+        logger.warning(f"Gemini API failed: {e}, using rules-based fallback")
+        return None
+
+
+async def get_fix_proposal_with_fallback(event: Dict[str, Any], correlation_id: str) -> Dict[str, Any]:
+    """
+    Generate fix proposal with automatic fallback to rules-based fix.
+    
+    Tries Gemini first, falls back to rules-based fix if Gemini fails.
+    Always publishes fix.proposed and fix.review_required events.
+    
+    Args:
+        event: Event dictionary (incident, hotspot, or plan)
+        correlation_id: Correlation ID linking to the original event
+        
+    Returns:
+        Fix proposal dictionary (always valid, never None)
+    """
+    from datetime import timezone
+    
+    # Try Gemini first (this publishes events on success)
+    fix_data = await get_fix_proposal(event, correlation_id)
+    
+    if fix_data:
+        return fix_data
+    
+    # Fall back to rules-based fix
+    logger.info("Using rules-based fallback fix")
+    fix_data = _generate_fallback_fix(event, correlation_id)
+    
+    # Publish events for fallback fix
+    fix_id = fix_data.get("fix_id")
+    sector_id = event.get("sector_id", "unknown")
+    
+    # Create fix.proposed event
+    fix_proposed_event = {
+        "event_id": str(uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "source": "fix-coordinator",
+        "severity": Severity.WARNING.value,
+        "sector_id": sector_id,
+        "summary": f"Fix {fix_id} proposed: {fix_data.get('title', 'Untitled')}",
+        "correlation_id": correlation_id,
+        "details": fix_data
+    }
+    
+    # Create fix.review_required event
+    fix_review_event = {
+        "event_id": str(uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "source": "fix-reviewer",
+        "severity": Severity.WARNING.value,
+        "sector_id": sector_id,
+        "summary": f"Fix {fix_id} requires human review",
+        "correlation_id": correlation_id,
+        "details": fix_data
+    }
+    
+    # Publish both events
+    await publish(FIX_PROPOSED_TOPIC, fix_proposed_event)
+    logger.info(f"Published fix.proposed event (fallback): {fix_id}")
+    
+    await publish(FIX_REVIEW_REQUIRED_TOPIC, fix_review_event)
+    logger.info(f"Published fix.review_required event (fallback): {fix_id}")
+    
+    return fix_data

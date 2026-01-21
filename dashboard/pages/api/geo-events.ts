@@ -229,11 +229,21 @@ export default async function handler(
             severity: e.payload?.severity || 'info',
             summary: e.payload?.summary || '',
             geometry: geometry,
-            style: e.payload?.details?.style || { color: 'red', opacity: 0.5, outline: true },
+            style: e.payload?.details?.style || { 
+              color: inferredSource === 'traffic' ? '#10B981' : 'red', // Green for traffic
+              opacity: 0.9, 
+              outline: true 
+            },
             incident_type: e.payload?.details?.incident_type,
             description: e.payload?.details?.description,
             status: e.payload?.details?.status,
             source: inferredSource,
+            // Include full details for bearing, vehicle_id, etc. if available
+            details: {
+              ...e.payload?.details,
+              ...(e.payload?.details?.bearing && { bearing: e.payload.details.bearing }),
+              ...(e.payload?.details?.vehicle_id && { vehicle_id: e.payload.details.vehicle_id }),
+            },
           };
           
           // Apply source filter
@@ -307,21 +317,32 @@ export default async function handler(
       // Convert transit.vehicle.position to geo.incident (Point)
       if (e.topic === 'chronos.events.transit.vehicle.position') {
         const details = e.payload?.details || {};
-        const location = details.location || details.position || {};
-        const lat = location.latitude || location.lat;
-        const lon = location.longitude || location.lon;
+        // Vehicle position events have latitude/longitude directly in details
+        const lat = details.latitude || details.lat;
+        const lon = details.longitude || details.lon;
+        const bearing = details.bearing || null;
+        const vehicleId = details.vehicle_id;
+        const routeId = details.route_id;
         
         if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
           if (source === 'all' || source === 'transit') {
             incidents.push({
               event_id: e.payload?.event_id || e._id.toString(),
-              id: details.vehicle_id || e._id.toString(),
+              id: vehicleId || e._id.toString(),
               timestamp: e.timestamp instanceof Date ? e.timestamp.toISOString() : e.timestamp,
               severity: e.payload?.severity || 'info',
-              summary: e.payload?.summary || `Transit vehicle ${details.vehicle_id || 'unknown'}`,
+              summary: e.payload?.summary || `Transit vehicle ${vehicleId || 'unknown'}`,
               geometry: { type: 'Point', coordinates: [lon, lat] },
-              style: { color: '#FFA500', opacity: 0.8, outline: true },
+              style: { color: '#3B82F6', opacity: 0.9, outline: true }, // Blue for transit vehicles
               source: 'transit',
+              incident_type: 'vehicle_position',
+              // Include full details for bearing, route_id, etc.
+              details: {
+                ...details,
+                vehicle_id: vehicleId,
+                route_id: routeId,
+                bearing: bearing,
+              },
             });
           }
         }

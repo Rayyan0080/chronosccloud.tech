@@ -56,6 +56,19 @@ EVENT_TOPICS = [
     "chronos.events.transit.disruption.risk",
     "chronos.events.transit.hotspot",
     "chronos.events.transit.report.ready",
+    "chronos.events.transit.mitigation.applied",
+    # Fix (audit + actuation) domain events
+    "chronos.events.fix.proposed",
+    "chronos.events.fix.review_required",
+    "chronos.events.fix.approved",
+    "chronos.events.fix.rejected",
+    "chronos.events.fix.deploy_requested",
+    "chronos.events.fix.deploy_started",
+    "chronos.events.fix.deploy_succeeded",
+    "chronos.events.fix.deploy_failed",
+    "chronos.events.fix.verified",
+    "chronos.events.fix.rollback_requested",
+    "chronos.events.fix.rollback_succeeded",
 ]
 
 # MongoDB configuration

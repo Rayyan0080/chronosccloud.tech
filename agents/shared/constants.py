@@ -14,6 +14,19 @@ OPERATOR_STATUS_TOPIC = "chronos.events.operator.status"
 # Audit domain topics
 AUDIT_DECISION_TOPIC = "chronos.events.audit.decision"
 
+# Fix (audit + actuation) domain topics
+FIX_PROPOSED_TOPIC = "chronos.events.fix.proposed"
+FIX_REVIEW_REQUIRED_TOPIC = "chronos.events.fix.review_required"
+FIX_APPROVED_TOPIC = "chronos.events.fix.approved"
+FIX_REJECTED_TOPIC = "chronos.events.fix.rejected"
+FIX_DEPLOY_REQUESTED_TOPIC = "chronos.events.fix.deploy_requested"
+FIX_DEPLOY_STARTED_TOPIC = "chronos.events.fix.deploy_started"
+FIX_DEPLOY_SUCCEEDED_TOPIC = "chronos.events.fix.deploy_succeeded"
+FIX_DEPLOY_FAILED_TOPIC = "chronos.events.fix.deploy_failed"
+FIX_VERIFIED_TOPIC = "chronos.events.fix.verified"
+FIX_ROLLBACK_REQUESTED_TOPIC = "chronos.events.fix.rollback_requested"
+FIX_ROLLBACK_SUCCEEDED_TOPIC = "chronos.events.fix.rollback_succeeded"
+
 # System domain topics
 SYSTEM_ACTION_TOPIC = "chronos.events.system.action"
 APPROVAL_REQUIRED_TOPIC = "chronos.events.approval.required"
@@ -50,6 +63,7 @@ TRANSIT_TRIP_UPDATE_TOPIC = "chronos.events.transit.trip.update"
 TRANSIT_DISRUPTION_RISK_TOPIC = "chronos.events.transit.disruption.risk"
 TRANSIT_HOTSPOT_TOPIC = "chronos.events.transit.hotspot"
 TRANSIT_REPORT_READY_TOPIC = "chronos.events.transit.report.ready"
+TRANSIT_MITIGATION_APPLIED_TOPIC = "chronos.events.transit.mitigation.applied"
 
 # Disclaimer banner text constants
 DISCLAIMER_AIRSPACE = "SYNTHETIC / NOT FOR OPS"
@@ -86,5 +100,17 @@ ALL_TOPICS = [
     TRANSIT_DISRUPTION_RISK_TOPIC,
     TRANSIT_HOTSPOT_TOPIC,
     TRANSIT_REPORT_READY_TOPIC,
+    TRANSIT_MITIGATION_APPLIED_TOPIC,
+    FIX_PROPOSED_TOPIC,
+    FIX_REVIEW_REQUIRED_TOPIC,
+    FIX_APPROVED_TOPIC,
+    FIX_REJECTED_TOPIC,
+    FIX_DEPLOY_REQUESTED_TOPIC,
+    FIX_DEPLOY_STARTED_TOPIC,
+    FIX_DEPLOY_SUCCEEDED_TOPIC,
+    FIX_DEPLOY_FAILED_TOPIC,
+    FIX_VERIFIED_TOPIC,
+    FIX_ROLLBACK_REQUESTED_TOPIC,
+    FIX_ROLLBACK_SUCCEEDED_TOPIC,
 ]
 

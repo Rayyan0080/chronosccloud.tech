@@ -1195,6 +1195,256 @@ class TransitReportReadyEvent(BaseEvent):
     """Transit report ready event schema."""
     details: TransitReportReadyDetails = Field(..., description="Report ready specific details")
 
+
+class TransitMitigationAppliedDetails(BaseModel):
+    """Details for transit.mitigation.applied events."""
+    fix_id: str = Field(..., description="Fix identifier that triggered this mitigation")
+    action_type: str = Field(..., description="Type of action (e.g., TRANSIT_REROUTE_SIM)")
+    route_id: Optional[str] = Field(None, description="Route identifier affected")
+    target: Optional[Dict[str, Any]] = Field(None, description="Action target specification")
+    params: Optional[Dict[str, Any]] = Field(None, description="Action parameters")
+    simulation_mode: bool = Field(True, description="Whether this is a simulation (safe sandbox)")
+    what_if_active: Optional[bool] = Field(None, description="Whether this is stored as 'what-if active' scenario")
+
+
+class TransitMitigationAppliedEvent(BaseEvent):
+    """Transit mitigation applied event schema."""
+    details: TransitMitigationAppliedDetails = Field(..., description="Mitigation applied specific details")
+
+
+# Fix (Audit + Actuation) Domain Models
+class ActionType(str, Enum):
+    """Action type values for fix events."""
+    TRANSIT_REROUTE_SIM = "TRANSIT_REROUTE_SIM"
+    TRAFFIC_ADVISORY_SIM = "TRAFFIC_ADVISORY_SIM"
+    AIRSPACE_MITIGATION_SIM = "AIRSPACE_MITIGATION_SIM"
+    POWER_RECOVERY_SIM = "POWER_RECOVERY_SIM"
+
+
+class RiskLevel(str, Enum):
+    """Risk level values for fix events."""
+    LOW = "low"
+    MED = "med"
+    HIGH = "high"
+
+
+class FixSource(str, Enum):
+    """Source of fix generation."""
+    GEMINI = "gemini"
+    RULES = "rules"
+    CEREBRAS = "cerebras"
+
+
+class ActionVerification(BaseModel):
+    """Verification criteria for an action."""
+    metric_name: str = Field(..., description="Metric name to verify (e.g., 'delay_reduction', 'risk_score')")
+    threshold: float = Field(..., description="Threshold value for verification")
+    window_seconds: int = Field(..., description="Time window in seconds for verification")
+
+
+class ActionTarget(BaseModel):
+    """Target specification for an action."""
+    route_id: Optional[str] = Field(None, description="Route identifier (for transit actions)")
+    sector_id: Optional[str] = Field(None, description="Sector identifier (for power/airspace actions)")
+    area_bbox: Optional[Dict[str, Any]] = Field(None, description="Bounding box for area-based actions")
+    stop_id: Optional[str] = Field(None, description="Stop identifier (for transit actions)")
+    flight_id: Optional[str] = Field(None, description="Flight identifier (for airspace actions)")
+
+
+class FixAction(BaseModel):
+    """Action object for fix events."""
+    type: ActionType = Field(..., description="Type of action to perform")
+    target: ActionTarget = Field(..., description="Target specification for the action")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Action-specific parameters")
+    verification: Optional[ActionVerification] = Field(None, description="Verification criteria for the action")
+
+
+class ExpectedImpact(BaseModel):
+    """Expected impact metrics for a fix."""
+    delay_reduction: Optional[float] = Field(None, description="Expected delay reduction in minutes")
+    risk_score_delta: Optional[float] = Field(None, description="Expected change in risk score")
+    area_affected: Optional[Dict[str, Any]] = Field(None, description="Geographic area affected (bbox or geometry)")
+
+
+class FixDetails(BaseModel):
+    """Details for fix.* events."""
+    fix_id: str = Field(..., description="Unique fix identifier (stable)")
+    correlation_id: str = Field(..., description="Correlation ID linking to incident_id/hotspot_id/plan_id")
+    source: FixSource = Field(..., description="Source of fix generation (gemini|rules|cerebras)")
+    title: str = Field(..., description="Fix title")
+    summary: str = Field(..., description="Fix summary description")
+    actions: List[FixAction] = Field(..., description="List of actions to perform")
+    risk_level: RiskLevel = Field(..., description="Risk level of the fix (low|med|high)")
+    expected_impact: ExpectedImpact = Field(..., description="Expected impact metrics")
+    created_at: str = Field(..., description="Creation timestamp (ISO 8601)")
+    proposed_by: str = Field(..., description="Agent ID or operator ID who proposed the fix")
+    requires_human_approval: bool = Field(default=True, description="Whether human approval is required")
+    review_notes: Optional[str] = Field(None, description="Review notes from human reviewer")
+    approved_by: Optional[str] = Field(None, description="Agent ID or operator ID who approved/rejected")
+    deployed_at: Optional[str] = Field(None, description="Deployment timestamp (ISO 8601)")
+    verified_at: Optional[str] = Field(None, description="Verification timestamp (ISO 8601)")
+    rollback_reason: Optional[str] = Field(None, description="Reason for rollback if applicable")
+
+
+class FixEvent(BaseEvent):
+    """Fix event schema for audit + actuation workflow."""
+    details: FixDetails = Field(..., description="Fix-specific details")
+
+    @classmethod
+    def example_proposed(cls) -> Dict[str, Any]:
+        """Example fix.proposed event."""
+        fix_id = f"FIX-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "fix-coordinator",
+            "severity": Severity.WARNING,
+            "sector_id": "ottawa-transit",
+            "summary": f"Fix {fix_id} proposed for transit disruption",
+            "correlation_id": "HOTSPOT-ABC123",
+            "details": {
+                "fix_id": fix_id,
+                "correlation_id": "HOTSPOT-ABC123",
+                "source": FixSource.GEMINI,
+                "title": "Reroute Route 95 to bypass congestion",
+                "summary": "Proposed reroute to reduce delays by 15 minutes",
+                "actions": [
+                    {
+                        "type": ActionType.TRANSIT_REROUTE_SIM,
+                        "target": {
+                            "route_id": "ROUTE-95",
+                            "area_bbox": {
+                                "min_lat": 45.4115,
+                                "max_lat": 45.4315,
+                                "min_lon": -75.7072,
+                                "max_lon": -75.6872
+                            }
+                        },
+                        "params": {
+                            "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"],
+                            "expected_delay_reduction": 15.0
+                        },
+                        "verification": {
+                            "metric_name": "delay_reduction",
+                            "threshold": 10.0,
+                            "window_seconds": 300
+                        }
+                    }
+                ],
+                "risk_level": RiskLevel.MED,
+                "expected_impact": {
+                    "delay_reduction": 15.0,
+                    "risk_score_delta": -0.2,
+                    "area_affected": {
+                        "type": "bbox",
+                        "coordinates": {
+                            "min_lat": 45.4115,
+                            "max_lat": 45.4315,
+                            "min_lon": -75.7072,
+                            "max_lon": -75.6872
+                        }
+                    }
+                },
+                "created_at": datetime.utcnow().isoformat() + "Z",
+                "proposed_by": "agent-fix-generator",
+                "requires_human_approval": True
+            }
+        }
+
+    @classmethod
+    def example_approved(cls) -> Dict[str, Any]:
+        """Example fix.approved event."""
+        fix_id = f"FIX-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "fix-reviewer",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": f"Fix {fix_id} approved for deployment",
+            "correlation_id": "HOTSPOT-ABC123",
+            "details": {
+                "fix_id": fix_id,
+                "correlation_id": "HOTSPOT-ABC123",
+                "source": FixSource.GEMINI,
+                "title": "Reroute Route 95 to bypass congestion",
+                "summary": "Proposed reroute to reduce delays by 15 minutes",
+                "actions": [
+                    {
+                        "type": ActionType.TRANSIT_REROUTE_SIM,
+                        "target": {
+                            "route_id": "ROUTE-95"
+                        },
+                        "params": {
+                            "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+                        },
+                        "verification": {
+                            "metric_name": "delay_reduction",
+                            "threshold": 10.0,
+                            "window_seconds": 300
+                        }
+                    }
+                ],
+                "risk_level": RiskLevel.MED,
+                "expected_impact": {
+                    "delay_reduction": 15.0,
+                    "risk_score_delta": -0.2
+                },
+                "created_at": (datetime.utcnow().replace(minute=0, second=0, microsecond=0)).isoformat() + "Z",
+                "proposed_by": "agent-fix-generator",
+                "requires_human_approval": True,
+                "review_notes": "Approved after safety review",
+                "approved_by": "OP-001"
+            }
+        }
+
+    @classmethod
+    def example_deploy_succeeded(cls) -> Dict[str, Any]:
+        """Example fix.deploy_succeeded event."""
+        fix_id = f"FIX-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "fix-deployer",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-transit",
+            "summary": f"Fix {fix_id} deployed successfully",
+            "correlation_id": "HOTSPOT-ABC123",
+            "details": {
+                "fix_id": fix_id,
+                "correlation_id": "HOTSPOT-ABC123",
+                "source": FixSource.GEMINI,
+                "title": "Reroute Route 95 to bypass congestion",
+                "summary": "Proposed reroute to reduce delays by 15 minutes",
+                "actions": [
+                    {
+                        "type": ActionType.TRANSIT_REROUTE_SIM,
+                        "target": {
+                            "route_id": "ROUTE-95"
+                        },
+                        "params": {
+                            "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+                        },
+                        "verification": {
+                            "metric_name": "delay_reduction",
+                            "threshold": 10.0,
+                            "window_seconds": 300
+                        }
+                    }
+                ],
+                "risk_level": RiskLevel.MED,
+                "expected_impact": {
+                    "delay_reduction": 15.0,
+                    "risk_score_delta": -0.2
+                },
+                "created_at": (datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)).isoformat() + "Z",
+                "proposed_by": "agent-fix-generator",
+                "requires_human_approval": True,
+                "approved_by": "OP-001",
+                "deployed_at": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
     @classmethod
     def example(cls) -> Dict[str, Any]:
         """Example report ready event."""
@@ -1248,6 +1498,18 @@ EVENT_SCHEMAS = {
     "transit.disruption.risk": TransitDisruptionRiskEvent,
     "transit.hotspot": TransitHotspotEvent,
     "transit.report.ready": TransitReportReadyEvent,
+    "transit.mitigation.applied": TransitMitigationAppliedEvent,
+    "fix.proposed": FixEvent,
+    "fix.review_required": FixEvent,
+    "fix.approved": FixEvent,
+    "fix.rejected": FixEvent,
+    "fix.deploy_requested": FixEvent,
+    "fix.deploy_started": FixEvent,
+    "fix.deploy_succeeded": FixEvent,
+    "fix.deploy_failed": FixEvent,
+    "fix.verified": FixEvent,
+    "fix.rollback_requested": FixEvent,
+    "fix.rollback_succeeded": FixEvent,
 }
 
 

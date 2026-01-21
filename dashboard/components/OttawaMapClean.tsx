@@ -524,7 +524,9 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
       if (map.getLayer('incidents-clusters')) map.removeLayer('incidents-clusters');
       if (map.getLayer('incidents-cluster-count')) map.removeLayer('incidents-cluster-count');
       if (map.getLayer('incidents-unclustered')) map.removeLayer('incidents-unclustered');
+      if (map.getLayer('vehicles-layer')) map.removeLayer('vehicles-layer');
       if (map.getSource('incidents')) map.removeSource('incidents');
+      if (map.getSource('vehicles')) map.removeSource('vehicles');
 
       // Double-check incidents still exist (state might have changed)
       if (incidents.length === 0) {
@@ -560,23 +562,48 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         const incidentType = (incident.details as any)?.incident_type;
         if (incident.source === 'airspace' || incidentType === 'aircraft_position') {
           color = '#00FF00'; // bright green for aircraft
+        } else if (incident.source === 'transit' || incidentType === 'vehicle_position') {
+          color = '#3B82F6'; // blue for transit vehicles - more visible and distinctive
+        } else if (incident.source === 'traffic' || incidentType?.includes('traffic') || incidentType?.includes('collision')) {
+          color = '#10B981'; // green for traffic vehicles
         } else if (incident.severity === 'high' || incident.severity === 'critical' || incident.severity === 'moderate' || incident.severity === 'error') {
           color = '#ef4444'; // red
         } else if (incident.severity === 'med' || incident.severity === 'warning') {
           color = '#f97316'; // orange
         }
 
-        // Determine icon type based on source and incident type
+        // Determine icon type based on source, topic, and incident type
         let iconType = 'incident'; // default
-        if (incident.source === 'airspace' || incidentType === 'aircraft_position') {
+        const topic = incident.topic || '';
+        const source = incident.source || '';
+        
+        if (source === 'airspace' || incidentType === 'aircraft_position' || topic.includes('airspace.aircraft')) {
           iconType = 'aircraft';
-        } else if (incident.source === 'transit') {
+        } else if (source === 'transit' || topic.includes('transit.vehicle') || incidentType === 'vehicle_position') {
           iconType = 'transit';
-        } else if (incident.topic?.includes('power') || incidentType?.includes('power')) {
+        } else if (source === 'traffic' || topic.includes('traffic') || incidentType?.includes('traffic') || incidentType?.includes('collision') || incidentType?.includes('vehicle')) {
+          iconType = 'traffic'; // Car icon for traffic vehicles
+        } else if (topic.includes('power') || incidentType?.includes('power')) {
           iconType = 'power';
         } else if (incident.severity === 'critical' || incident.severity === 'error') {
           iconType = 'alert';
         }
+        
+        // Debug logging for vehicle detection (will log during feature creation)
+        if (iconType === 'transit' || iconType === 'traffic') {
+          console.log('[Map] Vehicle detected:', {
+            id: incident.id,
+            source,
+            topic,
+            incidentType,
+            iconType,
+            hasBearing: !!((incident.details as any)?.details || incident.details)?.bearing,
+          });
+        }
+
+        // Extract bearing from vehicle details for rotation
+        const vehicleDetails = (incident.details as any)?.details || incident.details;
+        const bearing = vehicleDetails?.bearing || null;
 
         return {
           type: 'Feature',
@@ -594,6 +621,7 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
             timestamp: incident.timestamp,
             color,
             iconType, // Add icon type for rendering
+            bearing: bearing !== null ? bearing : undefined, // Add bearing for vehicle rotation
             details: incident.details,
           },
         };
@@ -617,11 +645,42 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         properties: features[0].properties,
       });
 
+      // Separate vehicles from other incidents - vehicles should never cluster
+      const vehicleFeatures = features.filter(f => {
+        const iconType = f.properties?.iconType;
+        return iconType === 'transit' || iconType === 'traffic' || iconType === 'aircraft';
+      });
+      const otherFeatures = features.filter(f => {
+        const iconType = f.properties?.iconType;
+        return iconType !== 'transit' && iconType !== 'traffic' && iconType !== 'aircraft';
+      });
+
+      console.log(`[Map] Separated: ${vehicleFeatures.length} vehicles, ${otherFeatures.length} other incidents`);
+
+      // Remove existing vehicle source if it exists
+      if (map.getSource('vehicles')) {
+        if (map.getLayer('vehicles-layer')) map.removeLayer('vehicles-layer');
+        map.removeSource('vehicles');
+      }
+
+      // Add vehicles as a separate non-clustered source
+      if (vehicleFeatures.length > 0) {
+        map.addSource('vehicles', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: vehicleFeatures,
+          },
+          cluster: false, // Never cluster vehicles - always show individual icons
+        });
+      }
+
+      // Add other incidents with clustering
       map.addSource('incidents', {
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features,
+          features: otherFeatures,
         },
         cluster: true,
         clusterRadius: 55,
@@ -662,10 +721,44 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
           </svg>
         `),
         transit: 'data:image/svg+xml;base64,' + btoa(`
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="4" y="6" width="16" height="10" rx="2" fill="currentColor"/>
-            <circle cx="7" cy="16" r="2" fill="currentColor"/>
-            <circle cx="17" cy="16" r="2" fill="currentColor"/>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Bus body -->
+            <rect x="4" y="8" width="24" height="14" rx="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/>
+            <!-- Windows -->
+            <rect x="7" y="10" width="4" height="3" rx="0.5" fill="#fff" opacity="0.9"/>
+            <rect x="13" y="10" width="4" height="3" rx="0.5" fill="#fff" opacity="0.9"/>
+            <rect x="19" y="10" width="4" height="3" rx="0.5" fill="#fff" opacity="0.9"/>
+            <!-- Front window -->
+            <rect x="25" y="10" width="2" height="3" rx="0.5" fill="#fff" opacity="0.9"/>
+            <!-- Wheels -->
+            <circle cx="9" cy="24" r="3" fill="#1a1a1a" stroke="#fff" stroke-width="1"/>
+            <circle cx="9" cy="24" r="1.5" fill="#fff"/>
+            <circle cx="23" cy="24" r="3" fill="#1a1a1a" stroke="#fff" stroke-width="1"/>
+            <circle cx="23" cy="24" r="1.5" fill="#fff"/>
+            <!-- Door -->
+            <rect x="7" y="15" width="2.5" height="6" rx="0.5" fill="#fff" opacity="0.8"/>
+            <!-- Route number indicator (optional) -->
+            <circle cx="26" cy="12" r="3" fill="#fff" opacity="0.3"/>
+          </svg>
+        `),
+        traffic: 'data:image/svg+xml;base64,' + btoa(`
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Car body -->
+            <rect x="6" y="10" width="20" height="12" rx="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/>
+            <!-- Windshield -->
+            <rect x="8" y="12" width="6" height="4" rx="0.5" fill="#fff" opacity="0.9"/>
+            <!-- Rear window -->
+            <rect x="18" y="12" width="6" height="4" rx="0.5" fill="#fff" opacity="0.9"/>
+            <!-- Front wheel -->
+            <circle cx="11" cy="24" r="2.5" fill="#1a1a1a" stroke="#fff" stroke-width="1"/>
+            <circle cx="11" cy="24" r="1.2" fill="#fff"/>
+            <!-- Rear wheel -->
+            <circle cx="21" cy="24" r="2.5" fill="#1a1a1a" stroke="#fff" stroke-width="1"/>
+            <circle cx="21" cy="24" r="1.2" fill="#fff"/>
+            <!-- Headlights -->
+            <circle cx="6" cy="16" r="1.5" fill="#fff" opacity="0.8"/>
+            <!-- Taillights -->
+            <circle cx="26" cy="16" r="1.5" fill="#ff0000" opacity="0.8"/>
           </svg>
         `),
         power: 'data:image/svg+xml;base64,' + btoa(`
@@ -707,17 +800,18 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         Object.entries(iconImages).map(([name, svg]) => loadIcon(name, svg))
       );
 
-      // Unclustered points with icons
-      map.addLayer({
-        id: 'incidents-unclustered',
-        type: 'symbol',
-        source: 'incidents',
-        filter: ['!', ['has', 'point_count']],
-        layout: {
+      // Add vehicle layer (always visible, never clustered)
+      if (vehicleFeatures.length > 0 && map.getSource('vehicles')) {
+        map.addLayer({
+          id: 'vehicles-layer',
+          type: 'symbol',
+          source: 'vehicles',
+          layout: {
           'icon-image': [
             'case',
             ['==', ['get', 'iconType'], 'aircraft'], 'aircraft',
             ['==', ['get', 'iconType'], 'transit'], 'transit',
+            ['==', ['get', 'iconType'], 'traffic'], 'traffic',
             ['==', ['get', 'iconType'], 'power'], 'power',
             ['==', ['get', 'iconType'], 'alert'], 'alert',
             'incident', // default
@@ -726,7 +820,70 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
             'case',
             ['==', ['get', 'id'], selectedIncident?.id || ''], 1.5, // Selected is larger
             ['==', ['get', 'source'], 'airspace'], 1.2, // Aircraft are larger
-            ['==', ['get', 'source'], 'transit'], 1.0, // Transit vehicles
+            ['==', ['get', 'source'], 'transit'], 1.3, // Transit vehicles - larger and more visible
+            ['==', ['get', 'source'], 'traffic'], 1.2, // Traffic vehicles - visible size
+            0.8, // Default size
+          ],
+          'icon-rotation-alignment': 'map', // Rotate with map (for vehicles)
+          'icon-rotate': [
+            'case',
+            ['has', 'bearing'], ['get', 'bearing'], // Use bearing if available
+            0, // Default no rotation
+          ],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true, // Allow vehicles to overlap so they're always visible
+        },
+        paint: {
+          'icon-color': ['get', 'color'],
+          'icon-opacity': [
+            'case',
+            ['==', ['get', 'source'], 'airspace'], 0.95, // Brighter for aircraft
+            ['==', ['get', 'source'], 'transit'], 0.95, // Brighter for transit vehicles
+            ['==', ['get', 'source'], 'traffic'], 0.95, // Brighter for traffic vehicles
+            0.9, // Default
+          ],
+        },
+      });
+
+      // Add click handler for vehicles
+      map.on('click', 'vehicles-layer', (e) => {
+        if (e.features && e.features.length > 0) {
+          const feature = e.features[0];
+          const incident = incidents.find((inc) => inc.id === feature.properties?.id);
+          if (incident) {
+            setSelectedIncident(incident);
+          }
+        }
+      });
+
+      // Change cursor on hover for vehicles
+      map.on('mouseenter', 'vehicles-layer', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'vehicles-layer', () => {
+        map.getCanvas().style.cursor = '';
+      });
+      }
+
+      // Unclustered points with icons (for non-vehicle incidents)
+      map.addLayer({
+        id: 'incidents-unclustered',
+        type: 'symbol',
+        source: 'incidents',
+        filter: ['!', ['has', 'point_count']], // Only unclustered points
+        layout: {
+          'icon-image': [
+            'case',
+            ['==', ['get', 'iconType'], 'aircraft'], 'aircraft',
+            ['==', ['get', 'iconType'], 'transit'], 'transit',
+            ['==', ['get', 'iconType'], 'traffic'], 'traffic',
+            ['==', ['get', 'iconType'], 'power'], 'power',
+            ['==', ['get', 'iconType'], 'alert'], 'alert',
+            'incident', // default
+          ],
+          'icon-size': [
+            'case',
+            ['==', ['get', 'id'], selectedIncident?.id || ''], 1.5, // Selected is larger
             0.8, // Default size
           ],
           'icon-allow-overlap': true,
@@ -734,11 +891,7 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         },
         paint: {
           'icon-color': ['get', 'color'],
-          'icon-opacity': [
-            'case',
-            ['==', ['get', 'source'], 'airspace'], 0.95, // Brighter for aircraft
-            0.9, // Default
-          ],
+          'icon-opacity': 0.9,
         },
       });
 

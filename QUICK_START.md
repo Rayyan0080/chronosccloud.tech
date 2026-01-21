@@ -62,8 +62,7 @@ Open a **new terminal** (keep the infrastructure terminal running) and run:
 **Windows (PowerShell):**
 ```powershell
 # Create virtual environment (recommended)
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+
 
 # Install dependencies
 pip install -r agents/shared/requirements.txt
@@ -321,11 +320,41 @@ Subscribed to audit.decision events
 
 ### Test 3: Airspace Domain
 
+**Option A: Generate Test Aircraft Data (Quick Test)**
+
+1. Open a **new terminal** and run:
+   ```bash
+   cd agents
+   python ../scripts/generate_airspace_test_data.py --count 18
+   ```
+2. Check the dashboard at http://localhost:3000
+3. The **Airspace Status** gauge should show congestion (18 aircraft = ~120% congestion)
+4. Wait 5-10 seconds for the dashboard to refresh
+5. The gauge should update from 0% to show the congestion level
+
+**Option B: Upload Flight Plan (Full Test)**
+
 1. Go to dashboard: http://localhost:3000/airspace
 2. Click "Upload Plan" tab
 3. Upload a flight plan JSON file (see `dashboard/test_flight_plan.json`)
 4. Watch conflicts and hotspots get detected
 5. Check the map at http://localhost:3000/map to see geospatial overlays
+
+**Option C: Use Live Data Adapter**
+
+1. Start the live data runner with OpenSky adapter:
+   ```bash
+   # Set environment variable
+   export LIVE_ADAPTERS=opensky_airspace
+   # Or on Windows PowerShell:
+   $env:LIVE_ADAPTERS="opensky_airspace"
+   
+   # Run the live data runner
+   cd live_data
+   python runner.py
+   ```
+2. The adapter will generate mock aircraft data automatically
+3. Check the dashboard - airspace gauge should update within 15-30 seconds
 
 ### Test 4: Map Visualization
 

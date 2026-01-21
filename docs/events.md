@@ -1613,6 +1613,693 @@ Transit report ready events indicating analysis reports have been generated.
 }
 ```
 
+### fix.proposed
+
+Fix proposed events indicating a new fix has been proposed to address an incident, hotspot, or plan issue.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "fix_id": "string (stable identifier)",
+    "correlation_id": "string (incident_id|hotspot_id|plan_id)",
+    "source": "string (gemini|rules|cerebras)",
+    "title": "string",
+    "summary": "string",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM|TRAFFIC_ADVISORY_SIM|AIRSPACE_MITIGATION_SIM|POWER_RECOVERY_SIM",
+        "target": {
+          "route_id": "string (optional)",
+          "sector_id": "string (optional)",
+          "area_bbox": "object (optional)",
+          "stop_id": "string (optional)",
+          "flight_id": "string (optional)"
+        },
+        "params": "object (action-specific parameters)",
+        "verification": {
+          "metric_name": "string",
+          "threshold": "number",
+          "window_seconds": "number"
+        }
+      }
+    ],
+    "risk_level": "string (low|med|high)",
+    "expected_impact": {
+      "delay_reduction": "number (optional, minutes)",
+      "risk_score_delta": "number (optional)",
+      "area_affected": "object (optional)"
+    },
+    "created_at": "string (ISO 8601)",
+    "proposed_by": "string (agent_id or operator_id)",
+    "requires_human_approval": "boolean (default: true)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example 1: Transit Reroute Fix**
+```json
+{
+  "event_id": "aa0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:00:00Z",
+  "source": "fix-coordinator",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 proposed for transit disruption",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95",
+          "area_bbox": {
+            "min_lat": 45.4115,
+            "max_lat": 45.4315,
+            "min_lon": -75.7072,
+            "max_lon": -75.6872
+          }
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"],
+          "expected_delay_reduction": 15.0
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2,
+      "area_affected": {
+        "type": "bbox",
+        "coordinates": {
+          "min_lat": 45.4115,
+          "max_lat": 45.4315,
+          "min_lon": -75.7072,
+          "max_lon": -75.6872
+        }
+      }
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true
+  }
+}
+```
+
+**Example 2: Airspace Mitigation Fix**
+```json
+{
+  "event_id": "bb0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:05:00Z",
+  "source": "fix-coordinator",
+  "severity": "warning",
+  "sector_id": "airspace-sector-2",
+  "summary": "Fix FIX-20240115-DEF456 proposed for conflict resolution",
+  "correlation_id": "CONF-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-DEF456",
+    "correlation_id": "CONF-ABC123",
+    "source": "rules",
+    "title": "Altitude adjustment for conflict mitigation",
+    "summary": "Increase altitude for FLT-ABC123 by 2000 feet",
+    "actions": [
+      {
+        "type": "AIRSPACE_MITIGATION_SIM",
+        "target": {
+          "flight_id": "FLT-ABC123",
+          "sector_id": "airspace-sector-2"
+        },
+        "params": {
+          "altitude_change": 2000,
+          "altitude_unit": "feet"
+        },
+        "verification": {
+          "metric_name": "risk_score_delta",
+          "threshold": -0.1,
+          "window_seconds": 60
+        }
+      }
+    ],
+    "risk_level": "low",
+    "expected_impact": {
+      "delay_reduction": 0.0,
+      "risk_score_delta": -0.3,
+      "area_affected": {
+        "type": "point",
+        "coordinates": {
+          "latitude": 39.8283,
+          "longitude": -98.5795,
+          "altitude": 35000
+        }
+      }
+    },
+    "created_at": "2024-01-15T14:05:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": false
+  }
+}
+```
+
+### fix.review_required
+
+Fix review required events indicating a fix needs human review before approval.
+
+**Payload Structure:** Same as `fix.proposed` with additional `review_notes` field.
+
+**Example:**
+```json
+{
+  "event_id": "cc0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:10:00Z",
+  "source": "fix-reviewer",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 requires human review",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "review_notes": "High-risk change requiring safety review"
+  }
+}
+```
+
+### fix.approved
+
+Fix approved events indicating a fix has been approved for deployment.
+
+**Payload Structure:** Same as `fix.proposed` with additional `approved_by` and `review_notes` fields.
+
+**Example:**
+```json
+{
+  "event_id": "dd0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:15:00Z",
+  "source": "fix-reviewer",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 approved for deployment",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "review_notes": "Approved after safety review",
+    "approved_by": "OP-001"
+  }
+}
+```
+
+### fix.rejected
+
+Fix rejected events indicating a fix has been rejected and will not be deployed.
+
+**Payload Structure:** Same as `fix.approved` with rejection information.
+
+**Example:**
+```json
+{
+  "event_id": "ee0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:20:00Z",
+  "source": "fix-reviewer",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-XYZ789 rejected",
+  "correlation_id": "HOTSPOT-DEF456",
+  "details": {
+    "fix_id": "FIX-20240115-XYZ789",
+    "correlation_id": "HOTSPOT-DEF456",
+    "source": "gemini",
+    "title": "Alternative reroute proposal",
+    "summary": "Proposed reroute rejected due to safety concerns",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-97"
+        },
+        "params": {
+          "alternative_route": ["STOP-12360", "STOP-12365"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "high",
+    "expected_impact": {
+      "delay_reduction": 20.0,
+      "risk_score_delta": 0.1
+    },
+    "created_at": "2024-01-15T14:10:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "review_notes": "Rejected: Alternative route passes through construction zone",
+    "approved_by": "OP-001"
+  }
+}
+```
+
+### fix.deploy_requested
+
+Fix deploy requested events indicating deployment has been requested for an approved fix.
+
+**Payload Structure:** Same as `fix.approved`.
+
+**Example:**
+```json
+{
+  "event_id": "ff0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:25:00Z",
+  "source": "fix-deployer",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 deployment requested",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001"
+  }
+}
+```
+
+### fix.deploy_started
+
+Fix deploy started events indicating deployment has begun.
+
+**Payload Structure:** Same as `fix.deploy_requested` with `deployed_at` timestamp.
+
+**Example:**
+```json
+{
+  "event_id": "110e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:26:00Z",
+  "source": "fix-deployer",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 deployment started",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001",
+    "deployed_at": "2024-01-15T14:26:00Z"
+  }
+}
+```
+
+### fix.deploy_succeeded
+
+Fix deploy succeeded events indicating successful deployment.
+
+**Payload Structure:** Same as `fix.deploy_started`.
+
+**Example:**
+```json
+{
+  "event_id": "220e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:27:00Z",
+  "source": "fix-deployer",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 deployed successfully",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001",
+    "deployed_at": "2024-01-15T14:27:00Z"
+  }
+}
+```
+
+### fix.deploy_failed
+
+Fix deploy failed events indicating deployment failure.
+
+**Payload Structure:** Same as `fix.deploy_started` with failure information.
+
+**Example:**
+```json
+{
+  "event_id": "330e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:28:00Z",
+  "source": "fix-deployer",
+  "severity": "moderate",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-GHI789 deployment failed",
+  "correlation_id": "HOTSPOT-GHI789",
+  "details": {
+    "fix_id": "FIX-20240115-GHI789",
+    "correlation_id": "HOTSPOT-GHI789",
+    "source": "rules",
+    "title": "Traffic advisory for Route 97",
+    "summary": "Deployment failed due to system error",
+    "actions": [
+      {
+        "type": "TRAFFIC_ADVISORY_SIM",
+        "target": {
+          "route_id": "ROUTE-97"
+        },
+        "params": {
+          "advisory_message": "Expect delays"
+        },
+        "verification": {
+          "metric_name": "risk_score_delta",
+          "threshold": -0.1,
+          "window_seconds": 180
+        }
+      }
+    ],
+    "risk_level": "low",
+    "expected_impact": {
+      "delay_reduction": 5.0,
+      "risk_score_delta": -0.1
+    },
+    "created_at": "2024-01-15T14:20:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": false,
+    "review_notes": "Deployment failed: System timeout"
+  }
+}
+```
+
+### fix.verified
+
+Fix verified events indicating a deployed fix has been verified as successful.
+
+**Payload Structure:** Same as `fix.deploy_succeeded` with `verified_at` timestamp.
+
+**Example:**
+```json
+{
+  "event_id": "440e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:35:00Z",
+  "source": "fix-verifier",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 verified as successful",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001",
+    "deployed_at": "2024-01-15T14:27:00Z",
+    "verified_at": "2024-01-15T14:35:00Z"
+  }
+}
+```
+
+### fix.rollback_requested
+
+Fix rollback requested events indicating a rollback has been requested for a deployed fix.
+
+**Payload Structure:** Same as `fix.verified` with `rollback_reason`.
+
+**Example:**
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:40:00Z",
+  "source": "fix-coordinator",
+  "severity": "warning",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 rollback requested",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001",
+    "deployed_at": "2024-01-15T14:27:00Z",
+    "verified_at": "2024-01-15T14:35:00Z",
+    "rollback_reason": "Fix causing unexpected delays on alternative route"
+  }
+}
+```
+
+### fix.rollback_succeeded
+
+Fix rollback succeeded events indicating successful rollback of a fix.
+
+**Payload Structure:** Same as `fix.rollback_requested`.
+
+**Example:**
+```json
+{
+  "event_id": "660e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T14:45:00Z",
+  "source": "fix-deployer",
+  "severity": "info",
+  "sector_id": "ottawa-transit",
+  "summary": "Fix FIX-20240115-ABC123 rolled back successfully",
+  "correlation_id": "HOTSPOT-ABC123",
+  "details": {
+    "fix_id": "FIX-20240115-ABC123",
+    "correlation_id": "HOTSPOT-ABC123",
+    "source": "gemini",
+    "title": "Reroute Route 95 to bypass congestion",
+    "summary": "Proposed reroute to reduce delays by 15 minutes",
+    "actions": [
+      {
+        "type": "TRANSIT_REROUTE_SIM",
+        "target": {
+          "route_id": "ROUTE-95"
+        },
+        "params": {
+          "alternative_route": ["STOP-12345", "STOP-12350", "STOP-12355"]
+        },
+        "verification": {
+          "metric_name": "delay_reduction",
+          "threshold": 10.0,
+          "window_seconds": 300
+        }
+      }
+    ],
+    "risk_level": "med",
+    "expected_impact": {
+      "delay_reduction": 15.0,
+      "risk_score_delta": -0.2
+    },
+    "created_at": "2024-01-15T14:00:00Z",
+    "proposed_by": "agent-fix-generator",
+    "requires_human_approval": true,
+    "approved_by": "OP-001",
+    "deployed_at": "2024-01-15T14:27:00Z",
+    "verified_at": "2024-01-15T14:35:00Z",
+    "rollback_reason": "Fix causing unexpected delays on alternative route"
+  }
+}
+```
+
 ## Event Validation
 
 All events should be validated against this schema before publishing. The Python schema implementation in `agents/shared/schema.py` provides validation utilities.
@@ -1639,6 +2326,17 @@ Events are published to topics matching the event type:
 - `transit.disruption.risk` → `chronos.events.transit.disruption.risk`
 - `transit.hotspot` → `chronos.events.transit.hotspot`
 - `transit.report.ready` → `chronos.events.transit.report.ready`
+- `fix.proposed` → `chronos.events.fix.proposed`
+- `fix.review_required` → `chronos.events.fix.review_required`
+- `fix.approved` → `chronos.events.fix.approved`
+- `fix.rejected` → `chronos.events.fix.rejected`
+- `fix.deploy_requested` → `chronos.events.fix.deploy_requested`
+- `fix.deploy_started` → `chronos.events.fix.deploy_started`
+- `fix.deploy_succeeded` → `chronos.events.fix.deploy_succeeded`
+- `fix.deploy_failed` → `chronos.events.fix.deploy_failed`
+- `fix.verified` → `chronos.events.fix.verified`
+- `fix.rollback_requested` → `chronos.events.fix.rollback_requested`
+- `fix.rollback_succeeded` → `chronos.events.fix.rollback_succeeded`
 
 ## Best Practices
 

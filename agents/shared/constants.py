@@ -65,9 +65,20 @@ TRANSIT_HOTSPOT_TOPIC = "chronos.events.transit.hotspot"
 TRANSIT_REPORT_READY_TOPIC = "chronos.events.transit.report.ready"
 TRANSIT_MITIGATION_APPLIED_TOPIC = "chronos.events.transit.mitigation.applied"
 
+# Defense domain topics
+DEFENSE_THREAT_DETECTED_TOPIC = "chronos.events.defense.threat.detected"
+DEFENSE_THREAT_ASSESSED_TOPIC = "chronos.events.defense.threat.assessed"
+DEFENSE_THREAT_ESCALATED_TOPIC = "chronos.events.defense.threat.escalated"
+DEFENSE_POSTURE_CHANGED_TOPIC = "chronos.events.defense.posture.changed"
+DEFENSE_ACTION_PROPOSED_TOPIC = "chronos.events.defense.action.proposed"
+DEFENSE_ACTION_APPROVED_TOPIC = "chronos.events.defense.action.approved"
+DEFENSE_ACTION_DEPLOYED_TOPIC = "chronos.events.defense.action.deployed"
+DEFENSE_THREAT_RESOLVED_TOPIC = "chronos.events.defense.threat.resolved"
+
 # Disclaimer banner text constants
 DISCLAIMER_AIRSPACE = "SYNTHETIC / NOT FOR OPS"
 DISCLAIMER_TRANSIT = "Transit data is informational only"
+DISCLAIMER_DEFENSE = "Defense features are non-kinetic and informational only."
 
 # All topics list (for subscription)
 ALL_TOPICS = [
@@ -112,5 +123,13 @@ ALL_TOPICS = [
     FIX_VERIFIED_TOPIC,
     FIX_ROLLBACK_REQUESTED_TOPIC,
     FIX_ROLLBACK_SUCCEEDED_TOPIC,
+    DEFENSE_THREAT_DETECTED_TOPIC,
+    DEFENSE_THREAT_ASSESSED_TOPIC,
+    DEFENSE_THREAT_ESCALATED_TOPIC,
+    DEFENSE_POSTURE_CHANGED_TOPIC,
+    DEFENSE_ACTION_PROPOSED_TOPIC,
+    DEFENSE_ACTION_APPROVED_TOPIC,
+    DEFENSE_ACTION_DEPLOYED_TOPIC,
+    DEFENSE_THREAT_RESOLVED_TOPIC,
 ]
 

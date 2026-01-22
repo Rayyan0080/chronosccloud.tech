@@ -604,7 +604,7 @@ class ActuatorAgent:
     async def run(self) -> None:
         """Main run loop for the actuator agent."""
         # Initialize Sentry
-        init_sentry()
+        init_sentry("actuator_agent")
         capture_startup("actuator-agent")
 
         # Connect to MongoDB

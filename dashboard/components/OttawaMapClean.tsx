@@ -69,7 +69,7 @@ type SelectedIncident = GeoIncident | null;
 
 type OttawaMapCleanProps = {
   defaultSource?: 'all' | 'transit' | 'traffic' | 'airspace' | 'power';
-  defaultTimeRange?: '15m' | '1h' | '6h' | '24h';
+  defaultTimeRange?: 'realtime' | '15m' | '1h' | '6h' | '24h';
   showFilters?: boolean;
 };
 
@@ -88,7 +88,7 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
   const [selectedIncident, setSelectedIncident] = useState<SelectedIncident>(null);
   
   // Filters
-  const [timeRange, setTimeRange] = useState<'15m' | '1h' | '6h' | '24h'>(defaultTimeRange);
+  const [timeRange, setTimeRange] = useState<'realtime' | '15m' | '1h' | '6h' | '24h'>(defaultTimeRange);
   const [severity, setSeverity] = useState<'all' | 'high' | 'med' | 'low'>('all');
   const [source, setSource] = useState<'all' | 'transit' | 'traffic' | 'airspace' | 'power'>(defaultSource);
   
@@ -125,8 +125,9 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
     setLoading(true);
     try {
       // Use the geo-events API which has comprehensive conversion logic
+      // In realtime mode, use a short time window (2 minutes)
       const params = new URLSearchParams({
-        timeRange: timeRange,
+        timeRange: timeRange === 'realtime' ? '15m' : timeRange, // Use 15m for API, we'll filter to 2m client-side
         severity: severity !== 'all' ? severity : '',
         source: source !== 'all' ? source : 'all',
       });
@@ -208,8 +209,71 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
       const finalIncidents = sortedIncidents.slice(0, MAX_INCIDENTS);
       const finalRiskAreas = sortedRiskAreas.slice(0, MAX_RISK_AREAS);
       
-      setIncidents(finalIncidents);
-      setRiskAreas(finalRiskAreas);
+      // Merge with existing incidents/risk areas instead of replacing
+      // This preserves events added via SSE
+      // In realtime mode, filter out old events
+      const now = Date.now();
+      const realtimeCutoff = timeRange === 'realtime' ? now - 2 * 60 * 1000 : 0; // 2 minutes ago for realtime
+      
+      setIncidents((prevIncidents) => {
+        // Create a map of fetched incidents by ID
+        const fetchedMap = new Map(finalIncidents.map(inc => [inc.id || inc.event_id, inc]));
+        
+        // Keep incidents that were added via SSE but aren't in the fetched list
+        const sseOnlyIncidents = prevIncidents.filter(inc => {
+          const id = inc.id || inc.event_id;
+          return id && !fetchedMap.has(id);
+        });
+        
+        // Combine: fetched incidents first, then SSE-only incidents
+        let merged = [...finalIncidents, ...sseOnlyIncidents]
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        // In realtime mode, filter out old events
+        if (timeRange === 'realtime') {
+          merged = merged.filter(inc => {
+            const eventTime = new Date(inc.timestamp).getTime();
+            return eventTime >= realtimeCutoff;
+          });
+        }
+        
+        merged = merged.slice(0, MAX_INCIDENTS);
+        
+        if (merged.length !== prevIncidents.length) {
+          console.log('[Map] Merged incidents:', prevIncidents.length, '->', merged.length, '(fetched:', finalIncidents.length, ', SSE-only:', sseOnlyIncidents.length, timeRange === 'realtime' ? ', realtime filtered' : '', ')');
+        }
+        return merged;
+      });
+      
+      setRiskAreas((prevRiskAreas) => {
+        // Create a map of fetched risk areas by ID
+        const fetchedMap = new Map(finalRiskAreas.map(area => [area.id || area.event_id, area]));
+        
+        // Keep risk areas that were added via SSE but aren't in the fetched list
+        const sseOnlyRiskAreas = prevRiskAreas.filter(area => {
+          const id = area.id || area.event_id;
+          return id && !fetchedMap.has(id);
+        });
+        
+        // Combine: fetched risk areas first, then SSE-only risk areas
+        let merged = [...finalRiskAreas, ...sseOnlyRiskAreas]
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        // In realtime mode, filter out old events
+        if (timeRange === 'realtime') {
+          merged = merged.filter(area => {
+            const eventTime = new Date(area.timestamp).getTime();
+            return eventTime >= realtimeCutoff;
+          });
+        }
+        
+        merged = merged.slice(0, MAX_RISK_AREAS);
+        
+        if (merged.length !== prevRiskAreas.length) {
+          console.log('[Map] Merged risk areas:', prevRiskAreas.length, '->', merged.length, '(fetched:', finalRiskAreas.length, ', SSE-only:', sseOnlyRiskAreas.length, timeRange === 'realtime' ? ', realtime filtered' : '', ')');
+        }
+        return merged;
+      });
       
       console.log(`[Map] Loaded ${finalIncidents.length} incidents, ${finalRiskAreas.length} risk areas`);
       if (finalIncidents.length > 0) {
@@ -262,10 +326,47 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
     };
   }, [mounted, timeRange, severity, source, applyFilters]);
 
+  // Cleanup old events in realtime mode (more frequent cleanup)
+  useEffect(() => {
+    if (!mounted || timeRange !== 'realtime') return;
+    
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const cutoff = now - 2 * 60 * 1000; // 2 minutes ago
+      
+      setIncidents((prev) => {
+        const filtered = prev.filter(inc => {
+          const eventTime = new Date(inc.timestamp).getTime();
+          return eventTime >= cutoff;
+        });
+        if (filtered.length !== prev.length) {
+          console.log('[Map] Cleaned up old incidents in realtime mode:', prev.length, '->', filtered.length);
+        }
+        return filtered;
+      });
+      
+      setRiskAreas((prev) => {
+        const filtered = prev.filter(area => {
+          const eventTime = new Date(area.timestamp).getTime();
+          return eventTime >= cutoff;
+        });
+        if (filtered.length !== prev.length) {
+          console.log('[Map] Cleaned up old risk areas in realtime mode:', prev.length, '->', filtered.length);
+        }
+        return filtered;
+      });
+    }, 10000); // Clean up every 10 seconds in realtime mode (more frequent)
+    
+    return () => {
+      clearInterval(cleanupInterval);
+    };
+  }, [mounted, timeRange]);
+
   // Helper to get since timestamp
   const getSinceTimestamp = (range: string): Date => {
     const now = Date.now();
     const ms = {
+      'realtime': 2 * 60 * 1000, // Last 2 minutes for real-time
       '15m': 15 * 60 * 1000,
       '1h': 60 * 60 * 1000,
       '6h': 6 * 60 * 60 * 1000,
@@ -1125,11 +1226,20 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
+          console.log('[Map] SSE connection opened');
           setSseConnected(true);
+          // Keep polling as backup but slow it down
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
+          // Use slower polling as backup when SSE is connected
+          // But in realtime mode, still poll frequently
+          const backupPollInterval = timeRange === 'realtime' ? 3000 : 10000; // 3 seconds for realtime, 10 seconds otherwise
+          pollingIntervalRef.current = setInterval(() => {
+            console.log('[Map] Backup polling (SSE connected)');
+            applyFilters();
+          }, backupPollInterval);
         };
 
         eventSource.onmessage = (event) => {
@@ -1141,11 +1251,23 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
             }
 
             if (data.type === 'error') {
-              console.error('SSE error:', data.message);
+              console.error('[Map] SSE error:', data.message);
               eventSource.close();
               setSseConnected(false);
-              // Fallback to polling
-              pollingIntervalRef.current = setInterval(applyFilters, 5000);
+              // Ensure polling is running
+              if (!pollingIntervalRef.current) {
+                pollingIntervalRef.current = setInterval(() => {
+                  console.log('[Map] Polling for updates...');
+                  applyFilters();
+                }, 5000);
+              } else {
+                // Speed up polling if SSE fails
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = setInterval(() => {
+                  console.log('[Map] Polling for updates...');
+                  applyFilters();
+                }, 5000);
+              }
               return;
             }
 
@@ -1234,26 +1356,142 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
               }
             }
 
-            // Update map data if event has geometry or location data
-            // Throttle map updates to avoid too many refreshes
-            if (hasGeometryForRendering) {
-              const now = Date.now();
-              const lastUpdate = lastMapUpdateRef.current || 0;
+            // Update map data immediately if event has geometry or location data
+            // In realtime mode, always add new events immediately
+            if (hasGeometryForRendering || timeRange === 'realtime') {
+              if (hasGeometryForRendering) {
+                console.log('[Map] SSE event with geometry, adding immediately:', data.event_id);
+              } else if (timeRange === 'realtime') {
+                console.log('[Map] SSE event in realtime mode, attempting to add:', data.event_id);
+              }
               
-              // Only refresh map if it's been at least 2 seconds since last update
-              if (now - lastUpdate > 2000) {
-                lastMapUpdateRef.current = now;
-                // Trigger refresh
-                applyFilters();
-              } else {
-                // Schedule a debounced update
-                if (mapUpdateTimeoutRef.current) {
-                  clearTimeout(mapUpdateTimeoutRef.current);
+              // Convert event to GeoIncident or GeoRiskArea format
+              try {
+                // Check if it's already a geo.incident or geo.risk_area
+                if (data.topic === 'chronos.events.geo.incident' || data.geometry?.type === 'Point') {
+                  const coords = data.geometry?.coordinates || 
+                    (data.details?.location ? [data.details.location.longitude || data.details.location.lon, data.details.location.latitude || data.details.location.lat] : null) ||
+                    (data.details?.position ? [data.details.position.longitude || data.details.position.lon, data.details.position.latitude || data.details.position.lat] : null);
+                  
+                  if (coords && coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                    const newIncident: GeoIncident = {
+                      event_id: data.event_id || data.id || '',
+                      id: data.id || data.event_id || '',
+                      timestamp: data.timestamp || new Date().toISOString(),
+                      severity: data.severity || 'info',
+                      summary: data.summary || 'Event',
+                      geometry: {
+                        type: 'Point',
+                        coordinates: [coords[0], coords[1]],
+                      },
+                      source: data.source || 'unknown',
+                      topic: data.topic || 'geo.incident',
+                      details: data.details || data,
+                    };
+                    
+                    // Add immediately to incidents (only in realtime mode or if within time window)
+                    setIncidents((prev) => {
+                      // In realtime mode, only add if it's recent
+                      if (timeRange === 'realtime') {
+                        const eventTime = new Date(newIncident.timestamp).getTime();
+                        const cutoff = Date.now() - 2 * 60 * 1000; // 2 minutes ago
+                        if (eventTime < cutoff) {
+                          console.log('[Map] Skipping old incident in realtime mode:', newIncident.id);
+                          return prev;
+                        }
+                      }
+                      
+                      // Check if already exists
+                      const exists = prev.some(inc => inc.id === newIncident.id || inc.event_id === newIncident.event_id);
+                      if (exists) {
+                        // Update existing
+                        return prev.map(inc => 
+                          (inc.id === newIncident.id || inc.event_id === newIncident.event_id) ? newIncident : inc
+                        );
+                      }
+                      // Add new at the beginning, keep within limit
+                      const updated = [newIncident, ...prev].slice(0, MAX_INCIDENTS);
+                      console.log('[Map] Added incident via SSE, count:', prev.length, '->', updated.length);
+                      return updated;
+                    });
+                  }
+                } else if (data.topic === 'chronos.events.geo.risk_area' || data.geometry?.type === 'Circle' || data.geometry?.type === 'Polygon') {
+                  const coords = data.geometry?.coordinates;
+                  
+                  if (coords) {
+                    const newRiskArea: GeoRiskArea = {
+                      event_id: data.event_id || data.id || '',
+                      id: data.id || data.event_id || '',
+                      timestamp: data.timestamp || new Date().toISOString(),
+                      severity: data.severity || 'info',
+                      summary: data.summary || 'Risk Area',
+                      geometry: data.geometry,
+                      source: data.source || 'unknown',
+                      topic: data.topic || 'geo.risk_area',
+                      details: data.details || data,
+                    };
+                    
+                    // Add immediately to risk areas (only in realtime mode or if within time window)
+                    setRiskAreas((prev) => {
+                      // In realtime mode, only add if it's recent
+                      if (timeRange === 'realtime') {
+                        const eventTime = new Date(newRiskArea.timestamp).getTime();
+                        const cutoff = Date.now() - 2 * 60 * 1000; // 2 minutes ago
+                        if (eventTime < cutoff) {
+                          console.log('[Map] Skipping old risk area in realtime mode:', newRiskArea.id);
+                          return prev;
+                        }
+                      }
+                      
+                      // Check if already exists
+                      const exists = prev.some(area => area.id === newRiskArea.id || area.event_id === newRiskArea.event_id);
+                      if (exists) {
+                        // Update existing
+                        return prev.map(area => 
+                          (area.id === newRiskArea.id || area.event_id === newRiskArea.event_id) ? newRiskArea : area
+                        );
+                      }
+                      // Add new at the beginning, keep within limit
+                      const updated = [newRiskArea, ...prev].slice(0, MAX_RISK_AREAS);
+                      console.log('[Map] Added risk area via SSE, count:', prev.length, '->', updated.length);
+                      return updated;
+                    });
+                  }
+                } else {
+                  // Try transitDisruptionRiskToGeo for transit events
+                  const geoResult = transitDisruptionRiskToGeo(data);
+                  if (geoResult) {
+                    if ('geometry' in geoResult && geoResult.geometry.type === 'Point') {
+                      const newIncident = geoResult as GeoIncident;
+                      setIncidents((prev) => {
+                        const exists = prev.some(inc => inc.id === newIncident.id || inc.event_id === newIncident.event_id);
+                        if (exists) {
+                          return prev.map(inc => 
+                            (inc.id === newIncident.id || inc.event_id === newIncident.event_id) ? newIncident : inc
+                          );
+                        }
+                        const updated = [newIncident, ...prev].slice(0, MAX_INCIDENTS);
+                        console.log('[Map] Added transit incident via SSE, count:', prev.length, '->', updated.length);
+                        return updated;
+                      });
+                    } else {
+                      const newRiskArea = geoResult as GeoRiskArea;
+                      setRiskAreas((prev) => {
+                        const exists = prev.some(area => area.id === newRiskArea.id || area.event_id === newRiskArea.event_id);
+                        if (exists) {
+                          return prev.map(area => 
+                            (area.id === newRiskArea.id || area.event_id === newRiskArea.event_id) ? newRiskArea : area
+                          );
+                        }
+                        const updated = [newRiskArea, ...prev].slice(0, MAX_RISK_AREAS);
+                        console.log('[Map] Added transit risk area via SSE, count:', prev.length, '->', updated.length);
+                        return updated;
+                      });
+                    }
+                  }
                 }
-                mapUpdateTimeoutRef.current = setTimeout(() => {
-                  lastMapUpdateRef.current = Date.now();
-                  applyFilters();
-                }, 2000);
+              } catch (err) {
+                console.error('[Map] Error converting SSE event to geo format:', err);
               }
             }
           } catch (err) {
@@ -1262,19 +1500,59 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
         };
 
         eventSource.onerror = () => {
-          console.warn('SSE connection error, falling back to polling');
+          console.warn('[Map] SSE connection error, falling back to polling');
           eventSource.close();
           setSseConnected(false);
-          pollingIntervalRef.current = setInterval(applyFilters, 5000);
+          // Ensure polling is running - faster in realtime mode
+          const pollInterval = timeRange === 'realtime' ? 2000 : 5000;
+          if (!pollingIntervalRef.current) {
+            pollingIntervalRef.current = setInterval(() => {
+              console.log('[Map] Polling for updates...');
+              applyFilters();
+            }, pollInterval);
+          } else {
+            // Speed up polling if SSE fails
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = setInterval(() => {
+              console.log('[Map] Polling for updates...');
+              applyFilters();
+            }, pollInterval);
+          }
         };
 
       } catch (err) {
-        console.error('Failed to create SSE connection:', err);
+        console.error('[Map] Failed to create SSE connection:', err);
         setSseConnected(false);
-        pollingIntervalRef.current = setInterval(applyFilters, 5000);
+        // Ensure polling is running - faster in realtime mode
+        const pollInterval = timeRange === 'realtime' ? 2000 : 5000;
+        if (!pollingIntervalRef.current) {
+          pollingIntervalRef.current = setInterval(() => {
+            console.log('[Map] Polling for updates...');
+            applyFilters();
+          }, pollInterval);
+        }
       }
     };
 
+    // Always start with polling (fast updates)
+    // In realtime mode, poll more frequently
+    const pollInterval = timeRange === 'realtime' ? 2000 : 5000; // 2 seconds for realtime, 5 seconds otherwise
+    
+    if (!pollingIntervalRef.current) {
+      pollingIntervalRef.current = setInterval(() => {
+        console.log('[Map] Polling for updates...');
+        applyFilters();
+      }, pollInterval);
+    } else {
+      // Update interval if timeRange changed
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = setInterval(() => {
+        console.log('[Map] Polling for updates...');
+        applyFilters();
+      }, pollInterval);
+    }
+
+    // Then try to connect SSE
     connectSSE();
 
     return () => {
@@ -1340,9 +1618,34 @@ export default function OttawaMapClean(props: OttawaMapCleanProps = {}) {
             <label className="block text-xs font-medium text-gray-300 mb-1">Time Window</label>
             <select
               value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value as any)}
+              onChange={(e) => {
+                const newRange = e.target.value as any;
+                setTimeRange(newRange);
+                // When switching to realtime, clear old events
+                if (newRange === 'realtime') {
+                  const now = Date.now();
+                  const cutoff = now - 2 * 60 * 1000; // 2 minutes ago
+                  setIncidents((prev) => {
+                    const filtered = prev.filter(inc => {
+                      const eventTime = new Date(inc.timestamp).getTime();
+                      return eventTime >= cutoff;
+                    });
+                    console.log('[Map] Switched to realtime, filtered incidents:', prev.length, '->', filtered.length);
+                    return filtered;
+                  });
+                  setRiskAreas((prev) => {
+                    const filtered = prev.filter(area => {
+                      const eventTime = new Date(area.timestamp).getTime();
+                      return eventTime >= cutoff;
+                    });
+                    console.log('[Map] Switched to realtime, filtered risk areas:', prev.length, '->', filtered.length);
+                    return filtered;
+                  });
+                }
+              }}
               className="w-full px-2 py-1 rounded bg-gray-700 text-white text-xs border border-gray-600"
             >
+              <option value="realtime">⚡ Real-time (Live)</option>
               <option value="15m">Last 15 minutes</option>
               <option value="1h">Last hour</option>
               <option value="6h">Last 6 hours</option>

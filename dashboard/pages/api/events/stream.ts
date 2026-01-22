@@ -45,7 +45,7 @@ export default async function handler(
   try {
     // Connect to MongoDB
     const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB || 'chronos');
+    const db = client.db(process.env.MONGO_DB || 'chronos');
     const collection = db.collection('events');
 
     // Send initial connection message

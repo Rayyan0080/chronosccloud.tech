@@ -133,7 +133,7 @@ class FixProposalAgent:
     async def run(self) -> None:
         """Main run loop for the fix proposal agent."""
         # Initialize Sentry
-        init_sentry()
+        init_sentry("fix_proposal_agent")
         capture_startup("fix-proposal-agent")
 
         # Connect to message broker

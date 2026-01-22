@@ -13,7 +13,7 @@ import re
 import sys
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from uuid import uuid4
 
 # Add project root to Python path
@@ -22,14 +22,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger = logging.getLogger(__name__)
 
 # Import prompt template
-from ai.prompts import RECOVERY_PLAN_PROMPT, FIX_PROPOSAL_PROMPT
+from ai.prompts import RECOVERY_PLAN_PROMPT, FIX_PROPOSAL_PROMPT, DEFENSE_ASSESSMENT_PROMPT
 
 # Import schema for fix validation
 from agents.shared.schema import (
     FixDetails, FixAction, ActionType, RiskLevel, FixSource, 
     ExpectedImpact, ActionVerification, ActionTarget, Severity
 )
-from agents.shared.constants import FIX_PROPOSED_TOPIC, FIX_REVIEW_REQUIRED_TOPIC
+from agents.shared.constants import (
+    FIX_PROPOSED_TOPIC, 
+    FIX_REVIEW_REQUIRED_TOPIC,
+    DEFENSE_THREAT_ASSESSED_TOPIC,
+)
 from agents.shared.messaging import publish
 
 
@@ -711,3 +715,182 @@ async def get_fix_proposal_with_fallback(event: Dict[str, Any], correlation_id: 
     logger.info(f"Published fix.review_required event (fallback): {fix_id}")
     
     return fix_data
+
+
+def _validate_defense_assessment(assessment_data: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """
+    Validate defense assessment against required schema.
+    
+    Args:
+        assessment_data: Assessment dictionary to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check required fields
+    required_fields = ["threat_type", "likely_cause", "recommended_posture", "protective_actions", "escalation_needed"]
+    missing_fields = [field for field in required_fields if field not in assessment_data]
+    
+    if missing_fields:
+        return False, f"Missing required fields: {missing_fields}"
+    
+    # Validate threat_type
+    valid_threat_types = ["airspace", "cyber_physical", "environmental", "civil"]
+    if assessment_data.get("threat_type") not in valid_threat_types:
+        return False, f"threat_type must be one of: {valid_threat_types}"
+    
+    # Validate types
+    if not isinstance(assessment_data.get("likely_cause"), str):
+        return False, "likely_cause must be a string"
+    
+    if not isinstance(assessment_data.get("recommended_posture"), str):
+        return False, "recommended_posture must be a string"
+    
+    if not isinstance(assessment_data.get("protective_actions"), list):
+        return False, "protective_actions must be a list"
+    
+    if len(assessment_data.get("protective_actions", [])) == 0:
+        return False, "protective_actions must be a non-empty array"
+    
+    if not all(isinstance(action, str) for action in assessment_data.get("protective_actions", [])):
+        return False, "All protective_actions must be strings"
+    
+    if not isinstance(assessment_data.get("escalation_needed"), bool):
+        return False, "escalation_needed must be a boolean"
+    
+    return True, None
+
+
+async def assess_defense_threat(
+    threat_id: str,
+    threat_summary: str,
+    sources: List[str],
+    confidence_score: float,
+    current_posture: str,
+    sector_id: str = "unknown",
+) -> Optional[Dict[str, Any]]:
+    """
+    Assess a defense threat using Gemini API with strict JSON output and validation.
+    
+    SAFETY: This function NEVER crashes. Returns None if Gemini API fails or returns invalid JSON.
+    
+    On success, publishes:
+    - defense.threat.assessed event
+    
+    Args:
+        threat_id: Threat identifier
+        threat_summary: Summary of the threat
+        sources: List of data sources involved
+        confidence_score: Confidence score (0.0-1.0)
+        current_posture: Current city defense posture
+        sector_id: Sector identifier
+        
+    Returns:
+        Assessment dictionary if successful, None if fallback needed
+    """
+    from datetime import timezone
+    from agents.shared.schema import DefenseThreatAssessedEvent, Severity
+    
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        logger.info("GEMINI_API_KEY not set, skipping Gemini assessment")
+        return None
+    
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        logger.warning("google-generativeai library not installed, skipping Gemini assessment")
+        return None
+    
+    try:
+        # Configure Gemini
+        genai.configure(api_key=gemini_api_key)
+        
+        # Prepare prompt
+        sources_str = ", ".join(sources) if sources else "unknown"
+        prompt = DEFENSE_ASSESSMENT_PROMPT.format(
+            threat_summary=threat_summary,
+            sources=sources_str,
+            confidence_score=confidence_score,
+            current_posture=current_posture,
+        )
+        
+        logger.info(f"Calling Gemini API to assess threat {threat_id}...")
+        
+        # Call Gemini API with strict JSON output
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.3,  # Lower temperature for more consistent JSON
+                "max_output_tokens": 1500,
+            },
+        )
+        
+        # Extract text from response
+        response_text = response.text if hasattr(response, "text") else str(response)
+        logger.debug(f"Gemini response: {response_text[:500]}...")
+        
+        # Parse JSON from response (STRICT parsing)
+        assessment_data = _extract_json_from_text(response_text)
+        
+        if not assessment_data:
+            logger.warning("Failed to parse JSON from Gemini response")
+            return None
+        
+        # Validate against schema
+        is_valid, error_msg = _validate_defense_assessment(assessment_data)
+        if not is_valid:
+            logger.warning(f"Gemini assessment validation failed: {error_msg}")
+            return None
+        
+        logger.info(f"Defense assessment generated successfully using Gemini for threat {threat_id}")
+        
+        # Create assessment event
+        assessment_score = confidence_score  # Use confidence score as assessment score
+        risk_level = assessment_data.get("recommended_posture", "unknown")
+        
+        # Determine severity based on escalation_needed and threat_type
+        if assessment_data.get("escalation_needed", False):
+            severity = Severity.CRITICAL
+        elif confidence_score >= 0.8:
+            severity = Severity.HIGH
+        elif confidence_score >= 0.6:
+            severity = Severity.MODERATE
+        else:
+            severity = Severity.WARNING
+        
+        # Create assessment notes from likely_cause and protective_actions
+        assessment_notes = f"Likely cause: {assessment_data.get('likely_cause', 'Unknown')}. "
+        assessment_notes += f"Recommended posture: {assessment_data.get('recommended_posture', 'unknown')}. "
+        assessment_notes += f"Protective actions: {', '.join(assessment_data.get('protective_actions', []))}"
+        
+        assessed_event = DefenseThreatAssessedEvent(
+            event_id=str(uuid4()),
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            source="defense-threat-assessor",
+            severity=severity,
+            sector_id=sector_id,
+            summary=f"Threat {threat_id} assessed: {assessment_data.get('likely_cause', 'Assessment complete')}",
+            correlation_id=threat_id,
+            details={
+                "threat_id": threat_id,
+                "assessment_score": assessment_score,
+                "risk_level": risk_level,
+                "assessment_notes": assessment_notes,
+                "assessed_by": "defense-assessor-gemini",
+                "assessed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                # Include full assessment data for reference
+                "_assessment_data": assessment_data,
+            }
+        )
+        
+        # Publish defense.threat.assessed event
+        await publish(DEFENSE_THREAT_ASSESSED_TOPIC, assessed_event.dict())
+        logger.info(f"Published defense.threat.assessed event: {threat_id}")
+        
+        return assessment_data
+        
+    except Exception as e:
+        logger.warning(f"Gemini API failed for threat assessment: {e}")
+        return None

@@ -88,3 +88,38 @@ CRITICAL REQUIREMENTS:
 - verification at top level is optional (each action must have its own verification)
 
 Return ONLY the JSON object, nothing else."""
+
+
+DEFENSE_ASSESSMENT_PROMPT = """You are a defense assessment AI assistant for Project Chronos. Analyze a detected threat and provide a comprehensive assessment.
+
+Analyze the following threat information and generate an assessment. Return ONLY valid JSON, no other text, no prose, no explanations.
+
+Threat Information:
+{threat_summary}
+
+Sources Involved: {sources}
+Confidence Score: {confidence_score}
+Current City Posture: {current_posture}
+
+Generate a defense assessment with the following EXACT structure:
+{{
+  "threat_type": "airspace|cyber_physical|environmental|civil",
+  "likely_cause": "string (brief description of likely cause)",
+  "recommended_posture": "string (e.g., 'normal', 'heightened_alert', 'elevated', 'critical')",
+  "protective_actions": [
+    "string (action 1 description)",
+    "string (action 2 description)",
+    ...
+  ],
+  "escalation_needed": true|false
+}}
+
+CRITICAL REQUIREMENTS:
+- Output ONLY valid JSON, no markdown, no code blocks, no explanations
+- threat_type must be one of: "airspace", "cyber_physical", "environmental", "civil"
+- recommended_posture must be a valid posture level
+- protective_actions must be a non-empty array of strings
+- escalation_needed must be a boolean (true or false)
+- likely_cause must be a descriptive string
+
+Return ONLY the JSON object, nothing else."""

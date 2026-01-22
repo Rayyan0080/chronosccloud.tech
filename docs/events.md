@@ -2300,6 +2300,385 @@ Fix rollback succeeded events indicating successful rollback of a fix.
 }
 ```
 
+## Defense Domain Events
+
+**⚠️ IMPORTANT DISCLAIMER:** Defense features are non-kinetic and informational only.
+
+### defense.threat.detected
+
+Threat detected events indicating potential security or safety threats.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "threat_id": "string",
+    "threat_type": "airspace|cyber_physical|environmental|civil",
+    "confidence_score": "number (0.0-1.0)",
+    "severity": "low|med|high|critical",
+    "affected_area": "object (GeoJSON geometry, optional)",
+    "sources": ["array of strings"],
+    "summary": "string",
+    "detected_at": "string (ISO 8601)",
+    "disclaimer": "Defense features are non-kinetic and informational only."
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "770e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:00:00Z",
+  "source": "defense-threat-detector",
+  "severity": "high",
+  "sector_id": "ottawa-airspace",
+  "summary": "Threat THREAT-20240115-ABC123 detected: Unusual airspace activity",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "threat_id": "THREAT-20240115-ABC123",
+    "threat_type": "airspace",
+    "confidence_score": 0.75,
+    "severity": "high",
+    "affected_area": {
+      "type": "Polygon",
+      "coordinates": [[[-75.7, 45.4], [-75.6, 45.4], [-75.6, 45.5], [-75.7, 45.5], [-75.7, 45.4]]]
+    },
+    "sources": ["airspace", "satellite"],
+    "summary": "Unusual airspace activity detected in Ottawa region",
+    "detected_at": "2024-01-15T15:00:00Z",
+    "disclaimer": "Defense features are non-kinetic and informational only."
+  }
+}
+```
+
+### defense.threat.assessed
+
+Threat assessed events indicating that a threat has been evaluated.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "threat_id": "string",
+    "assessment_score": "number (0.0-1.0, optional)",
+    "risk_level": "string (optional)",
+    "assessment_notes": "string (optional)",
+    "assessed_by": "string (optional)",
+    "assessed_at": "string (ISO 8601)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "880e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:05:00Z",
+  "source": "defense-threat-assessor",
+  "severity": "moderate",
+  "sector_id": "ottawa-airspace",
+  "summary": "Threat THREAT-20240115-ABC123 assessed as high risk",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "threat_id": "THREAT-20240115-ABC123",
+    "assessment_score": 0.85,
+    "risk_level": "high",
+    "assessment_notes": "Threat confirmed with high confidence, requires immediate attention",
+    "assessed_by": "defense-analyst-001",
+    "assessed_at": "2024-01-15T15:05:00Z"
+  }
+}
+```
+
+### defense.threat.escalated
+
+Threat escalated events indicating that a threat's severity has been increased.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "threat_id": "string",
+    "previous_severity": "string",
+    "new_severity": "string",
+    "escalation_reason": "string (optional)",
+    "escalated_by": "string (optional)",
+    "escalated_at": "string (ISO 8601)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "990e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:10:00Z",
+  "source": "defense-threat-monitor",
+  "severity": "critical",
+  "sector_id": "ottawa-airspace",
+  "summary": "Threat THREAT-20240115-ABC123 escalated from high to critical",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "threat_id": "THREAT-20240115-ABC123",
+    "previous_severity": "high",
+    "new_severity": "critical",
+    "escalation_reason": "Threat activity increased significantly",
+    "escalated_by": "defense-monitor-001",
+    "escalated_at": "2024-01-15T15:10:00Z"
+  }
+}
+```
+
+### defense.posture.changed
+
+Defense posture changed events indicating changes to the overall defense posture.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "posture_id": "string (optional)",
+    "previous_posture": "string (optional)",
+    "new_posture": "string",
+    "change_reason": "string (optional)",
+    "changed_by": "string (optional)",
+    "changed_at": "string (ISO 8601)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "aa0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:15:00Z",
+  "source": "defense-posture-manager",
+  "severity": "warning",
+  "sector_id": "ottawa-region",
+  "summary": "Defense posture changed to heightened alert",
+  "correlation_id": "bb0e8400-e29b-41d4-a716-446655440000",
+  "details": {
+    "posture_id": "POSTURE-001",
+    "previous_posture": "normal",
+    "new_posture": "heightened_alert",
+    "change_reason": "Multiple threats detected in region",
+    "changed_by": "defense-coordinator-001",
+    "changed_at": "2024-01-15T15:15:00Z"
+  }
+}
+```
+
+### defense.action.proposed
+
+Defense action proposed events indicating that a defense action has been proposed.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "action_id": "string",
+    "threat_id": "string (optional)",
+    "action_type": "string",
+    "action_description": "string",
+    "proposed_by": "string (optional)",
+    "proposed_at": "string (ISO 8601)",
+    "requires_approval": "boolean"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "bb0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:20:00Z",
+  "source": "defense-action-planner",
+  "severity": "moderate",
+  "sector_id": "ottawa-airspace",
+  "summary": "Defense action ACTION-20240115-XYZ789 proposed for threat THREAT-20240115-ABC123",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "action_id": "ACTION-20240115-XYZ789",
+    "threat_id": "THREAT-20240115-ABC123",
+    "action_type": "informational_alert",
+    "action_description": "Issue public safety advisory regarding airspace activity",
+    "proposed_by": "defense-planner-001",
+    "proposed_at": "2024-01-15T15:20:00Z",
+    "requires_approval": true
+  }
+}
+```
+
+### defense.action.approved
+
+Defense action approved events indicating that a defense action has been approved.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "action_id": "string",
+    "threat_id": "string (optional)",
+    "approved_by": "string (optional)",
+    "approved_at": "string (ISO 8601)",
+    "approval_notes": "string (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "cc0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:25:00Z",
+  "source": "defense-action-approver",
+  "severity": "info",
+  "sector_id": "ottawa-airspace",
+  "summary": "Defense action ACTION-20240115-XYZ789 approved",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "action_id": "ACTION-20240115-XYZ789",
+    "threat_id": "THREAT-20240115-ABC123",
+    "approved_by": "OP-001",
+    "approved_at": "2024-01-15T15:25:00Z",
+    "approval_notes": "Action approved for deployment"
+  }
+}
+```
+
+### defense.action.deployed
+
+Defense action deployed events indicating that a defense action has been deployed.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "action_id": "string",
+    "threat_id": "string (optional)",
+    "deployment_status": "success|failed|partial",
+    "deployed_by": "string (optional)",
+    "deployed_at": "string (ISO 8601)",
+    "deployment_notes": "string (optional)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "dd0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T15:30:00Z",
+  "source": "defense-action-deployer",
+  "severity": "info",
+  "sector_id": "ottawa-airspace",
+  "summary": "Defense action ACTION-20240115-XYZ789 deployed successfully",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "action_id": "ACTION-20240115-XYZ789",
+    "threat_id": "THREAT-20240115-ABC123",
+    "deployment_status": "success",
+    "deployed_by": "defense-deployer-001",
+    "deployed_at": "2024-01-15T15:30:00Z",
+    "deployment_notes": "Public safety advisory issued"
+  }
+}
+```
+
+### defense.threat.resolved
+
+Threat resolved events indicating that a threat has been resolved.
+
+**Payload Structure:**
+```json
+{
+  "event_id": "string (UUID)",
+  "timestamp": "string (ISO 8601)",
+  "source": "string",
+  "severity": "info|warning|moderate|critical",
+  "sector_id": "string",
+  "summary": "string",
+  "details": {
+    "threat_id": "string",
+    "resolution_status": "resolved|mitigated|false_positive",
+    "resolution_notes": "string (optional)",
+    "resolved_by": "string (optional)",
+    "resolved_at": "string (ISO 8601)"
+  },
+  "correlation_id": "string (UUID, optional)"
+}
+```
+
+**Example:**
+```json
+{
+  "event_id": "ee0e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2024-01-15T16:00:00Z",
+  "source": "defense-threat-resolver",
+  "severity": "info",
+  "sector_id": "ottawa-airspace",
+  "summary": "Threat THREAT-20240115-ABC123 resolved",
+  "correlation_id": "THREAT-20240115-ABC123",
+  "details": {
+    "threat_id": "THREAT-20240115-ABC123",
+    "resolution_status": "resolved",
+    "resolution_notes": "Threat activity ceased, no further action required",
+    "resolved_by": "defense-monitor-001",
+    "resolved_at": "2024-01-15T16:00:00Z"
+  }
+}
+```
+
 ## Event Validation
 
 All events should be validated against this schema before publishing. The Python schema implementation in `agents/shared/schema.py` provides validation utilities.
@@ -2337,6 +2716,14 @@ Events are published to topics matching the event type:
 - `fix.verified` → `chronos.events.fix.verified`
 - `fix.rollback_requested` → `chronos.events.fix.rollback_requested`
 - `fix.rollback_succeeded` → `chronos.events.fix.rollback_succeeded`
+- `defense.threat.detected` → `chronos.events.defense.threat.detected`
+- `defense.threat.assessed` → `chronos.events.defense.threat.assessed`
+- `defense.threat.escalated` → `chronos.events.defense.threat.escalated`
+- `defense.posture.changed` → `chronos.events.defense.posture.changed`
+- `defense.action.proposed` → `chronos.events.defense.action.proposed`
+- `defense.action.approved` → `chronos.events.defense.action.approved`
+- `defense.action.deployed` → `chronos.events.defense.action.deployed`
+- `defense.threat.resolved` → `chronos.events.defense.threat.resolved`
 
 ## Best Practices
 

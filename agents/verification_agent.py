@@ -656,7 +656,7 @@ class VerificationAgent:
     async def run(self) -> None:
         """Main run loop for the verification agent."""
         # Initialize Sentry
-        init_sentry()
+        init_sentry("verification_agent")
         capture_startup("verification-agent")
 
         # Connect to MongoDB

@@ -62,7 +62,9 @@ export default async function handler(
     const verificationCollection = db.collection('fix_verifications');
 
     // Send initial connection message
-    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+    const connectedMsg = JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() });
+    res.write(`data: ${connectedMsg}\n\n`);
+    console.log('[Audit Stream] SSE connection established');
 
     // Helper function to get processed fix IDs
     const getProcessedFixIds = async () => {
@@ -152,6 +154,23 @@ export default async function handler(
       }
     );
 
+    // Set up change stream to watch for verification status updates
+    const verificationChangeStream = verificationCollection.watch(
+      [
+        {
+          $match: {
+            $or: [
+              { 'operationType': 'insert' },
+              { 'operationType': 'update' },
+            ],
+          },
+        },
+      ],
+      {
+        fullDocument: 'updateLookup',
+      }
+    );
+
     // Send heartbeat every 15 seconds
     const heartbeatInterval = setInterval(() => {
       try {
@@ -160,26 +179,103 @@ export default async function handler(
         // Client disconnected
         clearInterval(heartbeatInterval);
         changeStream.close();
+        verificationChangeStream.close();
       }
     }, 15000);
 
     // Handle new events from change stream
-    changeStream.on('change', async (change) => {
-      try {
-        if ('fullDocument' in change && change.fullDocument) {
+      changeStream.on('change', async (change) => {
+        try {
+          const hasFullDocument = 'fullDocument' in change && change.fullDocument;
+          console.log('[Audit Stream] Change detected:', change.operationType, hasFullDocument ? (change as any).fullDocument?.topic : 'no document');
+          if (hasFullDocument && change.fullDocument) {
           const formatted = await formatFixEvent(change.fullDocument as FixEventDocument);
           if (formatted) {
-            res.write(`data: ${JSON.stringify(formatted)}\n\n`);
+            const msg = JSON.stringify(formatted);
+            res.write(`data: ${msg}\n\n`);
+            console.log('[Audit Stream] Sent fix_update:', formatted.payload?.details?.fix_id);
           } else {
             // Fix was processed (approved/rejected), send removal event
             const fixId = (change.fullDocument as any).payload?.details?.fix_id;
             if (fixId) {
-              res.write(`data: ${JSON.stringify({ type: 'fix_removed', fix_id: fixId })}\n\n`);
+              const msg = JSON.stringify({ type: 'fix_removed', fix_id: fixId });
+              res.write(`data: ${msg}\n\n`);
+              console.log('[Audit Stream] Sent fix_removed:', fixId);
             }
           }
         }
       } catch (err) {
-        console.error('Error sending fix event:', err);
+        console.error('[Audit Stream] Error sending fix event:', err);
+      }
+    });
+
+    // Handle verification status updates
+    verificationChangeStream.on('change', async (change) => {
+      try {
+        console.log('[Audit Stream] Verification change detected:', change.operationType);
+        let verification: any;
+        
+        // Handle both insert and update operations
+        if ('fullDocument' in change && change.fullDocument) {
+          verification = change.fullDocument;
+        } else if (change.operationType === 'update' && change.documentKey) {
+          // For updates, fetch the full document
+          verification = await verificationCollection.findOne({ _id: change.documentKey._id });
+        }
+        
+        if (!verification) {
+          console.log('[Audit Stream] No verification document found');
+          return;
+        }
+        
+        const fixId = verification.fix_id;
+        if (!fixId) {
+          console.log('[Audit Stream] No fix_id in verification');
+          return;
+        }
+
+        console.log('[Audit Stream] Processing verification update for fix:', fixId);
+
+        // Find the corresponding fix event
+        const fixEvent = await collection.findOne({
+          'payload.details.fix_id': fixId,
+          topic: 'chronos.events.fix.review_required',
+        });
+
+        if (fixEvent) {
+          // Check if already processed
+          const processedIds = await getProcessedFixIds();
+          if (processedIds.has(fixId)) {
+            console.log('[Audit Stream] Fix already processed, skipping:', fixId);
+            return;
+          }
+
+          // Format with updated verification status
+          const verificationStatus = {
+            fix_id: verification.fix_id,
+            status: verification.status || 'not_started',
+            started_at: verification.started_at instanceof Date ? verification.started_at.toISOString() : verification.started_at,
+            completed_at: verification.completed_at instanceof Date ? verification.completed_at.toISOString() : verification.completed_at,
+            passed: verification.passed,
+            metrics: verification.metrics,
+            timeline: verification.timeline || [],
+          };
+
+          const update = {
+            type: 'fix_verification_update',
+            fix_id: fixId,
+            _id: fixEvent._id.toString(), // Include _id for matching
+            verification: verificationStatus,
+          };
+
+          const msg = JSON.stringify(update);
+          res.write(`data: ${msg}\n\n`);
+          console.log('[Audit Stream] Sent verification update:', fixId, verificationStatus.status);
+        } else {
+          console.log('[Audit Stream] No fix event found for verification:', fixId);
+        }
+      } catch (err) {
+        console.error('[Audit Stream] Error sending verification update:', err);
       }
     });
 
@@ -187,6 +283,7 @@ export default async function handler(
     req.on('close', () => {
       clearInterval(heartbeatInterval);
       changeStream.close();
+      verificationChangeStream.close();
       res.end();
     });
 
@@ -194,6 +291,7 @@ export default async function handler(
     req.on('aborted', () => {
       clearInterval(heartbeatInterval);
       changeStream.close();
+      verificationChangeStream.close();
       res.end();
     });
 

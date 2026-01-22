@@ -69,6 +69,15 @@ EVENT_TOPICS = [
     "chronos.events.fix.verified",
     "chronos.events.fix.rollback_requested",
     "chronos.events.fix.rollback_succeeded",
+    # Defense domain events
+    "chronos.events.defense.threat.detected",
+    "chronos.events.defense.threat.assessed",
+    "chronos.events.defense.threat.escalated",
+    "chronos.events.defense.posture.changed",
+    "chronos.events.defense.action.proposed",
+    "chronos.events.defense.action.approved",
+    "chronos.events.defense.action.deployed",
+    "chronos.events.defense.threat.resolved",
 ]
 
 # MongoDB configuration

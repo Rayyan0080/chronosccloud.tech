@@ -35,6 +35,10 @@ REQUIRED_AGENTS = [
     "fix_proposal_agent.py",  # Auto-generate fixes for Critical events
     "actuator_agent.py",  # Fix deployment actuator
     "verification_agent.py",  # Fix verification
+    "defense_detector.py",  # Defense threat detection
+    "defense_assessor.py",  # Defense threat AI assessment
+    "defense_actuator.py",  # Defense action deployment (sandbox only)
+    "defense_verifier.py",  # Defense action verification and threat resolution
 ]
 
 # Optional agents (domain-specific)

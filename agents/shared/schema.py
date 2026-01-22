@@ -1476,6 +1476,329 @@ class FixEvent(BaseEvent):
         }
 
 
+# Defense Domain Events
+
+class ThreatType(str, Enum):
+    """Threat type values."""
+    AIRSPACE = "airspace"
+    CYBER_PHYSICAL = "cyber_physical"
+    ENVIRONMENTAL = "environmental"
+    CIVIL = "civil"
+
+
+class ThreatSeverity(str, Enum):
+    """Threat severity levels."""
+    LOW = "low"
+    MED = "med"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ThreatDetails(BaseModel):
+    """Details for threat events."""
+    threat_id: str = Field(..., description="Unique threat identifier")
+    threat_type: ThreatType = Field(..., description="Type of threat")
+    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0.0 to 1.0)")
+    severity: ThreatSeverity = Field(..., description="Threat severity level")
+    affected_area: Optional[Dict[str, Any]] = Field(None, description="Geometry of affected area (GeoJSON format)")
+    sources: List[str] = Field(default_factory=list, description="List of data sources (transit, satellite, airspace, traffic, infra)")
+    summary: str = Field(..., description="Summary of the threat")
+    detected_at: str = Field(..., description="Detection timestamp (ISO 8601)")
+    disclaimer: str = Field(default="Defense features are non-kinetic and informational only.", description="Defense disclaimer")
+
+
+class DefenseThreatDetectedEvent(BaseEvent):
+    """Defense threat detected event schema."""
+    details: ThreatDetails = Field(..., description="Threat detection specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example threat detected event."""
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-threat-detector",
+            "severity": Severity.HIGH,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Threat {threat_id} detected: Unusual airspace activity",
+            "correlation_id": threat_id,
+            "details": {
+                "threat_id": threat_id,
+                "threat_type": ThreatType.AIRSPACE,
+                "confidence_score": 0.75,
+                "severity": ThreatSeverity.HIGH,
+                "affected_area": {
+                    "type": "Polygon",
+                    "coordinates": [[[-75.7, 45.4], [-75.6, 45.4], [-75.6, 45.5], [-75.7, 45.5], [-75.7, 45.4]]]
+                },
+                "sources": ["airspace", "satellite"],
+                "summary": "Unusual airspace activity detected in Ottawa region",
+                "detected_at": datetime.utcnow().isoformat() + "Z",
+                "disclaimer": "Defense features are non-kinetic and informational only."
+            }
+        }
+
+
+class DefenseThreatAssessedDetails(BaseModel):
+    """Details for defense.threat.assessed events."""
+    threat_id: str = Field(..., description="Threat identifier")
+    assessment_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Assessment score (0.0 to 1.0)")
+    risk_level: Optional[str] = Field(None, description="Assessed risk level")
+    assessment_notes: Optional[str] = Field(None, description="Assessment notes")
+    assessed_by: Optional[str] = Field(None, description="Agent or operator who assessed the threat")
+    assessed_at: str = Field(..., description="Assessment timestamp (ISO 8601)")
+
+
+class DefenseThreatAssessedEvent(BaseEvent):
+    """Defense threat assessed event schema."""
+    details: DefenseThreatAssessedDetails = Field(..., description="Threat assessment specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example threat assessed event."""
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-threat-assessor",
+            "severity": Severity.MODERATE,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Threat {threat_id} assessed as high risk",
+            "correlation_id": threat_id,
+            "details": {
+                "threat_id": threat_id,
+                "assessment_score": 0.85,
+                "risk_level": "high",
+                "assessment_notes": "Threat confirmed with high confidence, requires immediate attention",
+                "assessed_by": "defense-analyst-001",
+                "assessed_at": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
+class DefenseThreatEscalatedDetails(BaseModel):
+    """Details for defense.threat.escalated events."""
+    threat_id: str = Field(..., description="Threat identifier")
+    previous_severity: str = Field(..., description="Previous severity level")
+    new_severity: str = Field(..., description="New severity level")
+    escalation_reason: Optional[str] = Field(None, description="Reason for escalation")
+    escalated_by: Optional[str] = Field(None, description="Agent or operator who escalated")
+    escalated_at: str = Field(..., description="Escalation timestamp (ISO 8601)")
+
+
+class DefenseThreatEscalatedEvent(BaseEvent):
+    """Defense threat escalated event schema."""
+    details: DefenseThreatEscalatedDetails = Field(..., description="Threat escalation specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example threat escalated event."""
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-threat-monitor",
+            "severity": Severity.CRITICAL,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Threat {threat_id} escalated from high to critical",
+            "correlation_id": threat_id,
+            "details": {
+                "threat_id": threat_id,
+                "previous_severity": "high",
+                "new_severity": "critical",
+                "escalation_reason": "Threat activity increased significantly",
+                "escalated_by": "defense-monitor-001",
+                "escalated_at": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
+class DefensePostureChangedDetails(BaseModel):
+    """Details for defense.posture.changed events."""
+    posture_id: Optional[str] = Field(None, description="Posture identifier")
+    previous_posture: Optional[str] = Field(None, description="Previous defense posture")
+    new_posture: str = Field(..., description="New defense posture")
+    change_reason: Optional[str] = Field(None, description="Reason for posture change")
+    changed_by: Optional[str] = Field(None, description="Agent or operator who changed posture")
+    changed_at: str = Field(..., description="Posture change timestamp (ISO 8601)")
+
+
+class DefensePostureChangedEvent(BaseEvent):
+    """Defense posture changed event schema."""
+    details: DefensePostureChangedDetails = Field(..., description="Posture change specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example posture changed event."""
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-posture-manager",
+            "severity": Severity.WARNING,
+            "sector_id": "ottawa-region",
+            "summary": "Defense posture changed to heightened alert",
+            "correlation_id": str(uuid4()),
+            "details": {
+                "posture_id": "POSTURE-001",
+                "previous_posture": "normal",
+                "new_posture": "heightened_alert",
+                "change_reason": "Multiple threats detected in region",
+                "changed_by": "defense-coordinator-001",
+                "changed_at": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
+class DefenseActionProposedDetails(BaseModel):
+    """Details for defense.action.proposed events."""
+    action_id: str = Field(..., description="Action identifier")
+    threat_id: Optional[str] = Field(None, description="Related threat identifier")
+    action_type: str = Field(..., description="Type of defense action")
+    action_description: str = Field(..., description="Description of the proposed action")
+    proposed_by: Optional[str] = Field(None, description="Agent or operator who proposed the action")
+    proposed_at: str = Field(..., description="Proposal timestamp (ISO 8601)")
+    requires_approval: bool = Field(default=True, description="Whether action requires approval")
+
+
+class DefenseActionProposedEvent(BaseEvent):
+    """Defense action proposed event schema."""
+    details: DefenseActionProposedDetails = Field(..., description="Action proposal specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example action proposed event."""
+        action_id = f"ACTION-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-action-planner",
+            "severity": Severity.MODERATE,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Defense action {action_id} proposed for threat {threat_id}",
+            "correlation_id": threat_id,
+            "details": {
+                "action_id": action_id,
+                "threat_id": threat_id,
+                "action_type": "informational_alert",
+                "action_description": "Issue public safety advisory regarding airspace activity",
+                "proposed_by": "defense-planner-001",
+                "proposed_at": datetime.utcnow().isoformat() + "Z",
+                "requires_approval": True
+            }
+        }
+
+
+class DefenseActionApprovedDetails(BaseModel):
+    """Details for defense.action.approved events."""
+    action_id: str = Field(..., description="Action identifier")
+    threat_id: Optional[str] = Field(None, description="Related threat identifier")
+    approved_by: Optional[str] = Field(None, description="Agent or operator who approved the action")
+    approved_at: str = Field(..., description="Approval timestamp (ISO 8601)")
+    approval_notes: Optional[str] = Field(None, description="Approval notes")
+
+
+class DefenseActionApprovedEvent(BaseEvent):
+    """Defense action approved event schema."""
+    details: DefenseActionApprovedDetails = Field(..., description="Action approval specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example action approved event."""
+        action_id = f"ACTION-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-action-approver",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Defense action {action_id} approved",
+            "correlation_id": threat_id,
+            "details": {
+                "action_id": action_id,
+                "threat_id": threat_id,
+                "approved_by": "OP-001",
+                "approved_at": datetime.utcnow().isoformat() + "Z",
+                "approval_notes": "Action approved for deployment"
+            }
+        }
+
+
+class DefenseActionDeployedDetails(BaseModel):
+    """Details for defense.action.deployed events."""
+    action_id: str = Field(..., description="Action identifier")
+    threat_id: Optional[str] = Field(None, description="Related threat identifier")
+    deployment_status: str = Field(..., description="Deployment status (success|failed|partial)")
+    deployed_by: Optional[str] = Field(None, description="Agent or operator who deployed the action")
+    deployed_at: str = Field(..., description="Deployment timestamp (ISO 8601)")
+    deployment_notes: Optional[str] = Field(None, description="Deployment notes")
+
+
+class DefenseActionDeployedEvent(BaseEvent):
+    """Defense action deployed event schema."""
+    details: DefenseActionDeployedDetails = Field(..., description="Action deployment specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example action deployed event."""
+        action_id = f"ACTION-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-action-deployer",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Defense action {action_id} deployed successfully",
+            "correlation_id": threat_id,
+            "details": {
+                "action_id": action_id,
+                "threat_id": threat_id,
+                "deployment_status": "success",
+                "deployed_by": "defense-deployer-001",
+                "deployed_at": datetime.utcnow().isoformat() + "Z",
+                "deployment_notes": "Public safety advisory issued"
+            }
+        }
+
+
+class DefenseThreatResolvedDetails(BaseModel):
+    """Details for defense.threat.resolved events."""
+    threat_id: str = Field(..., description="Threat identifier")
+    resolution_status: str = Field(..., description="Resolution status (resolved|mitigated|false_positive)")
+    resolution_notes: Optional[str] = Field(None, description="Resolution notes")
+    resolved_by: Optional[str] = Field(None, description="Agent or operator who resolved the threat")
+    resolved_at: str = Field(..., description="Resolution timestamp (ISO 8601)")
+
+
+class DefenseThreatResolvedEvent(BaseEvent):
+    """Defense threat resolved event schema."""
+    details: DefenseThreatResolvedDetails = Field(..., description="Threat resolution specific details")
+
+    @classmethod
+    def example(cls) -> Dict[str, Any]:
+        """Example threat resolved event."""
+        threat_id = f"THREAT-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid4())[:8].upper()}"
+        return {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": "defense-threat-resolver",
+            "severity": Severity.INFO,
+            "sector_id": "ottawa-airspace",
+            "summary": f"Threat {threat_id} resolved",
+            "correlation_id": threat_id,
+            "details": {
+                "threat_id": threat_id,
+                "resolution_status": "resolved",
+                "resolution_notes": "Threat activity ceased, no further action required",
+                "resolved_by": "defense-monitor-001",
+                "resolved_at": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
+
 # Event type mapping
 EVENT_SCHEMAS = {
     "power.failure": PowerFailureEvent,
@@ -1510,6 +1833,14 @@ EVENT_SCHEMAS = {
     "fix.verified": FixEvent,
     "fix.rollback_requested": FixEvent,
     "fix.rollback_succeeded": FixEvent,
+    "defense.threat.detected": DefenseThreatDetectedEvent,
+    "defense.threat.assessed": DefenseThreatAssessedEvent,
+    "defense.threat.escalated": DefenseThreatEscalatedEvent,
+    "defense.posture.changed": DefensePostureChangedEvent,
+    "defense.action.proposed": DefenseActionProposedEvent,
+    "defense.action.approved": DefenseActionApprovedEvent,
+    "defense.action.deployed": DefenseActionDeployedEvent,
+    "defense.threat.resolved": DefenseThreatResolvedEvent,
 }
 
 

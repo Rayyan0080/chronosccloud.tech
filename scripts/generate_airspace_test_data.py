@@ -14,11 +14,12 @@ Usage:
 import asyncio
 import argparse
 import logging
+import math
 import os
 import random
 import sys
 from datetime import datetime, timezone
-from typing import List
+from typing import Dict, List
 from uuid import uuid4
 
 # Add project root to Python path
@@ -129,6 +130,136 @@ async def publish_aircraft_batch(count: int) -> None:
     logger.info(f"Expected congestion: {congestion:.1f}% ({count} aircraft / 15 threshold)")
 
 
+# Track aircraft positions for continuous movement
+aircraft_tracker: Dict[str, Dict] = {}
+
+def update_aircraft_position(aircraft_data: Dict) -> Dict:
+    """Update aircraft position based on velocity and heading."""
+    # Get current position
+    lat = aircraft_data["latitude"]
+    lon = aircraft_data["longitude"]
+    velocity = aircraft_data.get("velocity", 200)  # m/s
+    heading = aircraft_data.get("heading", 0)  # degrees
+    
+    # Convert heading to radians (0° = North, clockwise)
+    heading_rad = (heading * Math.PI) / 180
+    
+    # Calculate distance moved in 10 seconds (typical update interval)
+    time_elapsed = 10  # seconds
+    distance_m = velocity * time_elapsed  # meters
+    
+    # Convert to degrees (approximately 111,320 meters per degree)
+    lat_delta = (distance_m * Math.cos(heading_rad)) / 111320
+    lon_delta = (distance_m * Math.sin(heading_rad)) / (111320 * Math.cos(lat * Math.PI / 180))
+    
+    # Update position
+    new_lat = lat + lat_delta
+    new_lon = lon + lon_delta
+    
+    # Keep within Ottawa bounding box (wrap around if needed)
+    if new_lat < OTTAWA_BBOX["lat_min"] or new_lat > OTTAWA_BBOX["lat_max"]:
+        # Reverse heading
+        aircraft_data["heading"] = (heading + 180) % 360
+        new_lat = lat
+    if new_lon < OTTAWA_BBOX["lon_min"] or new_lon > OTTAWA_BBOX["lon_max"]:
+        # Reverse heading
+        aircraft_data["heading"] = (heading + 180) % 360
+        new_lon = lon
+    
+    aircraft_data["latitude"] = new_lat
+    aircraft_data["longitude"] = new_lon
+    
+    return aircraft_data
+
+async def publish_aircraft_continuously(count: int, interval: int = 10) -> None:
+    """Continuously publish aircraft position updates so they move on radar."""
+    
+    broker = await get_broker()
+    
+    if not await broker.is_connected():
+        logger.error("Failed to connect to message broker")
+        return
+    
+    logger.info(f"Starting continuous aircraft position updates ({count} aircraft, every {interval}s)...")
+    logger.info("Aircraft will move across the radar in real-time")
+    
+    # Initialize aircraft positions
+    for i in range(count):
+        icao24 = f"{random.randint(0x100000, 0xFFFFFF):06x}"
+        callsign = random.choice(CALLSIGNS)
+        
+        lat = OTTAWA_BBOX["lat_min"] + random.uniform(
+            0, OTTAWA_BBOX["lat_max"] - OTTAWA_BBOX["lat_min"]
+        )
+        lon = OTTAWA_BBOX["lon_min"] + random.uniform(
+            0, OTTAWA_BBOX["lon_max"] - OTTAWA_BBOX["lon_min"]
+        )
+        
+        aircraft_tracker[icao24] = {
+            "icao24": icao24,
+            "callsign": callsign,
+            "latitude": lat,
+            "longitude": lon,
+            "velocity": random.uniform(150, 250),  # m/s
+            "heading": random.uniform(0, 360),  # degrees
+        }
+    
+    # Continuously update and publish positions
+    while True:
+        try:
+            for icao24, aircraft_data in aircraft_tracker.items():
+                # Update position based on movement
+                heading_rad = (aircraft_data["heading"] * math.pi) / 180
+                velocity = aircraft_data["velocity"]
+                time_elapsed = interval
+                distance_m = velocity * time_elapsed
+                
+                # Convert to degrees
+                lat_delta = (distance_m * math.cos(heading_rad)) / 111320
+                lon_delta = (distance_m * math.sin(heading_rad)) / (111320 * math.cos(aircraft_data["latitude"] * math.pi / 180))
+                
+                # Update position
+                new_lat = aircraft_data["latitude"] + lat_delta
+                new_lon = aircraft_data["longitude"] + lon_delta
+                
+                # Bounce off boundaries
+                if new_lat < OTTAWA_BBOX["lat_min"] or new_lat > OTTAWA_BBOX["lat_max"]:
+                    aircraft_data["heading"] = (aircraft_data["heading"] + 180) % 360
+                    new_lat = aircraft_data["latitude"]
+                if new_lon < OTTAWA_BBOX["lon_min"] or new_lon > OTTAWA_BBOX["lon_max"]:
+                    aircraft_data["heading"] = (aircraft_data["heading"] + 180) % 360
+                    new_lon = aircraft_data["longitude"]
+                
+                aircraft_data["latitude"] = new_lat
+                aircraft_data["longitude"] = new_lon
+                
+                # Occasionally change heading slightly for more realistic movement
+                if random.random() < 0.1:  # 10% chance
+                    aircraft_data["heading"] = (aircraft_data["heading"] + random.uniform(-15, 15)) % 360
+                
+                # Generate and publish event
+                event = generate_aircraft_event(
+                    aircraft_data["icao24"],
+                    aircraft_data["callsign"],
+                    aircraft_data["latitude"],
+                    aircraft_data["longitude"]
+                )
+                # Update event with current velocity and heading
+                event["details"]["velocity"] = aircraft_data["velocity"]
+                event["details"]["heading"] = aircraft_data["heading"]
+                
+                await publish(AIRSPACE_AIRCRAFT_POSITION_TOPIC, event)
+            
+            logger.debug(f"Published {len(aircraft_tracker)} aircraft position updates")
+            await asyncio.sleep(interval)
+            
+        except KeyboardInterrupt:
+            logger.info("Stopping continuous aircraft updates...")
+            break
+        except Exception as e:
+            logger.error(f"Error in continuous update loop: {e}")
+            await asyncio.sleep(interval)
+
 async def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Generate test airspace aircraft position events")
@@ -162,14 +293,12 @@ async def main():
     
     try:
         if args.continuous and args.interval > 0:
-            logger.info("Running in continuous mode. Press Ctrl+C to stop.")
-            while True:
-                await publish_aircraft_batch(args.count)
-                logger.info(f"Waiting {args.interval} seconds before next update...")
-                await asyncio.sleep(args.interval)
+            logger.info("Running in continuous mode with MOVING aircraft. Press Ctrl+C to stop.")
+            await publish_aircraft_continuously(args.count, int(args.interval))
         else:
             await publish_aircraft_batch(args.count)
             logger.info("Done! Check the dashboard to see the airspace congestion gauge.")
+            logger.info("Tip: Use --continuous flag to see aircraft moving on the radar!")
     except KeyboardInterrupt:
         logger.info("\nReceived interrupt signal, shutting down...")
     except Exception as e:

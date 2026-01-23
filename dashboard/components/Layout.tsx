@@ -21,6 +21,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: '/', label: 'Event Feed' },
     { href: '/map', label: 'Map' },
+    { href: '/radar', label: 'Radar' },
     { href: '/airspace', label: 'Airspace' },
     { href: '/compare', label: 'Agentic Compare' },
     { href: '/audit', label: 'Audit' },

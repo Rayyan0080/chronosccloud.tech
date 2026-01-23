@@ -51,18 +51,18 @@ export default async function handler(
   res: NextApiResponse<ResponseData>
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
     const { fix_id } = req.query;
     if (!fix_id || typeof fix_id !== 'string') {
-      return res.status(400).json({ error: 'fix_id is required' });
+      return res.status(400).json({ success: false, error: 'fix_id is required' });
     }
 
     const { reason } = req.body;
     if (!reason || typeof reason !== 'string') {
-      return res.status(400).json({ error: 'reason is required' });
+      return res.status(400).json({ success: false, error: 'reason is required' });
     }
 
     // Get fix details from MongoDB
@@ -77,7 +77,7 @@ export default async function handler(
     });
 
     if (!reviewEvent) {
-      return res.status(404).json({ error: 'Fix not found or not in review' });
+      return res.status(404).json({ success: false, error: 'Fix not found or not in review' });
     }
 
     const fixDetails = reviewEvent.payload.details;
@@ -123,7 +123,7 @@ export default async function handler(
     });
   } catch (error: any) {
     console.error('Error rejecting fix:', error);
-    res.status(500).json({ error: error.message || 'Failed to reject fix' });
+    res.status(500).json({ success: false, error: error.message || 'Failed to reject fix' });
   }
 }
 

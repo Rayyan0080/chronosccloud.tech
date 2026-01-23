@@ -62,7 +62,8 @@ Open a **new terminal** (keep the infrastructure terminal running) and run:
 **Windows (PowerShell):**
 ```powershell
 # Create virtual environment (recommended)
-
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 
 # Install dependencies
 pip install -r agents/shared/requirements.txt

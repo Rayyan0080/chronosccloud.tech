@@ -44,7 +44,7 @@ export default async function handler(
         
         let status: 'normal' | 'warning' | 'error' | 'critical' = 'normal';
         if (severity === 'critical') status = 'critical';
-        else if (severity === 'moderate' || severity === 'error') status = 'moderate';  // 'error' for backward compatibility
+        else if (severity === 'moderate' || severity === 'error') status = 'error';  // 'error' for backward compatibility
         else if (severity === 'warning') status = 'warning';
 
         sectorStatuses.push({

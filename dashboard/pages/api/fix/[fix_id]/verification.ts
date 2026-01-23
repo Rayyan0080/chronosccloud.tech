@@ -32,13 +32,13 @@ export default async function handler(
   res: NextApiResponse<ResponseData>
 ) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' } as any);
   }
 
   try {
     const { fix_id } = req.query;
     if (!fix_id || typeof fix_id !== 'string') {
-      return res.status(400).json({ error: 'fix_id is required' });
+      return res.status(400).json({ verification: null, error: 'fix_id is required' });
     }
 
     const client = await clientPromise;
@@ -76,7 +76,7 @@ export default async function handler(
     res.status(200).json({ verification: verificationStatus });
   } catch (error: any) {
     console.error('Error fetching verification status:', error);
-    res.status(500).json({ error: error.message || 'Failed to fetch verification status' });
+    res.status(500).json({ verification: null, error: error.message || 'Failed to fetch verification status' });
   }
 }
 
